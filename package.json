@@ -13,5 +13,13 @@
     "node": ">=22.0.0"
   },
   "private": true,
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@types/node": "^25.5.0",
+    "dotenv": "^17.3.1",
+    "puppeteer": "^24.39.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
 }
