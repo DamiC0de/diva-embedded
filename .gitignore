@@ -1,5 +1,5 @@
 node_modules/
-dist/
+# dist/ — tracked for proto (live-patched JS)
 .env
 *.env.local
 data/memory/*.md
