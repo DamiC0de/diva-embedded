@@ -114,10 +114,7 @@ async function main(): Promise<void> {
 
   const server = net.createServer(handleConnection);
 
-  // Kill anything on port 9001 BEFORE we try to listen
-  try {
-    execSync(`fuser -k ${PORT}/tcp 2>/dev/null`, { timeout: 3000 });
-  } catch {}
+  // Note: don't use fuser -k here, it kills our own child processes
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
