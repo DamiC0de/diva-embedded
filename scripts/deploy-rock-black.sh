@@ -8,8 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 MODEL_DIR="$PROJECT_DIR/models"
-MODEL_FILE="hey_jarvis_v0.1.onnx"
-MODEL_URL="https://github.com/dscripka/openWakeWord/releases/download/v0.1.0/$MODEL_FILE"
+MODEL_FILE="hey_jarvis_v0.1.tflite"
+MODEL_URL="https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/$MODEL_FILE"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -95,8 +95,10 @@ echo "  Step 3: Python dependencies"
 echo "========================================="
 
 # Install openwakeword + numpy
-pip3 install --quiet --break-system-packages openwakeword numpy 2>/dev/null || \
-pip3 install --quiet openwakeword numpy 2>/dev/null || {
+pip3 install --quiet --break-system-packages --upgrade openwakeword numpy tflite-runtime 2>/dev/null || \
+pip3 install --quiet --upgrade openwakeword numpy tflite-runtime 2>/dev/null || \
+pip3 install --quiet --break-system-packages --upgrade openwakeword numpy 2>/dev/null || \
+pip3 install --quiet --upgrade openwakeword numpy 2>/dev/null || {
     fail "Failed to install Python packages"
     ERRORS=$((ERRORS + 1))
 }
@@ -125,6 +127,29 @@ echo "========================================="
 
 mkdir -p "$MODEL_DIR"
 
+# Also need the embedding + melspectrogram models in the openwakeword package dir
+OWW_PKG_DIR=$(python3 -c "import openwakeword; import os; print(os.path.dirname(openwakeword.__file__))" 2>/dev/null || echo "")
+OWW_RES_DIR=""
+if [ -n "$OWW_PKG_DIR" ]; then
+    OWW_RES_DIR="$OWW_PKG_DIR/resources/models"
+    mkdir -p "$OWW_RES_DIR"
+
+    # Download feature models required by openwakeword
+    for FEAT_MODEL in melspectrogram.tflite embedding_model.tflite; do
+        if [ ! -f "$OWW_RES_DIR/$FEAT_MODEL" ] || [ "$(stat -c%s "$OWW_RES_DIR/$FEAT_MODEL" 2>/dev/null)" -lt 10000 ]; then
+            info "Downloading $FEAT_MODEL..."
+            wget -q -O "$OWW_RES_DIR/$FEAT_MODEL" "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/$FEAT_MODEL" || true
+        fi
+    done
+
+    # Download the hey_jarvis wakeword model into the package dir too
+    if [ ! -f "$OWW_RES_DIR/$MODEL_FILE" ] || [ "$(stat -c%s "$OWW_RES_DIR/$MODEL_FILE" 2>/dev/null)" -lt 10000 ]; then
+        info "Downloading $MODEL_FILE to package dir..."
+        wget -q -O "$OWW_RES_DIR/$MODEL_FILE" "$MODEL_URL" || true
+    fi
+fi
+
+# Also download to project models dir as backup
 if [ -f "$MODEL_DIR/$MODEL_FILE" ]; then
     pass "Model already downloaded: $MODEL_FILE"
 else
@@ -137,13 +162,14 @@ else
     fi
 fi
 
-# Verify model file size (should be > 1MB)
+# Verify model file size (should be > 100KB for tflite)
 if [ -f "$MODEL_DIR/$MODEL_FILE" ]; then
     SIZE=$(stat -c%s "$MODEL_DIR/$MODEL_FILE" 2>/dev/null || stat -f%z "$MODEL_DIR/$MODEL_FILE" 2>/dev/null || echo 0)
-    if [ "$SIZE" -gt 1000000 ]; then
+    if [ "$SIZE" -gt 100000 ]; then
         pass "Model file valid ($SIZE bytes)"
     else
         fail "Model file too small ($SIZE bytes), may be corrupted"
+        rm -f "$MODEL_DIR/$MODEL_FILE"
         ERRORS=$((ERRORS + 1))
     fi
 fi

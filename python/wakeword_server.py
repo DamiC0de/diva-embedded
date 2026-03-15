@@ -42,8 +42,8 @@ ENERGY_THRESHOLD = 500  # RMS threshold for VAD
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
 MODEL_NAME = "hey_jarvis_v0.1"
-MODEL_FILE = f"{MODEL_NAME}.onnx"
-MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.1.0/{MODEL_FILE}"
+MODEL_FILE = f"{MODEL_NAME}.tflite"
+MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{MODEL_FILE}"
 
 
 # ---------------------------------------------------------------------------
@@ -212,17 +212,31 @@ def main():
         print("[Wake] ERROR: openwakeword not installed. Run: pip3 install openwakeword", flush=True)
         sys.exit(1)
 
+    # Also ensure embedding/melspectrogram models are downloaded
     try:
-        model = Model(
-            wakeword_models=[model_path],
-            inference_framework="onnx"
-        )
-    except TypeError:
-        # Older API fallback
+        import openwakeword
+        pkg_dir = os.path.dirname(openwakeword.__file__)
+        res_dir = os.path.join(pkg_dir, "resources", "models")
+        os.makedirs(res_dir, exist_ok=True)
+        for feat in ["melspectrogram.tflite", "embedding_model.tflite"]:
+            feat_path = os.path.join(res_dir, feat)
+            if not os.path.exists(feat_path) or os.path.getsize(feat_path) < 10000:
+                feat_url = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{feat}"
+                print(f"[Wake] Downloading {feat}...", flush=True)
+                urllib.request.urlretrieve(feat_url, feat_path)
+    except Exception as e:
+        print(f"[Wake] Warning: could not ensure feature models: {e}", flush=True)
+
+    try:
+        model = Model(wakeword_models=[model_path])
+    except Exception as e1:
+        print(f"[Wake] Model load attempt 1 failed: {e1}", flush=True)
         try:
-            model = Model(wakeword_models=[model_path])
-        except Exception:
-            model = Model(inference_framework="onnx")
+            model = Model(wakeword_models=[model_path], inference_framework="tflite")
+        except Exception as e2:
+            print(f"[Wake] Model load attempt 2 failed: {e2}", flush=True)
+            # Last resort: load all default models
+            model = Model()
 
     print("[Wake] Model loaded successfully", flush=True)
 
