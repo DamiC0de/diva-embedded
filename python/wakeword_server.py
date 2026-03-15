@@ -245,16 +245,12 @@ def main():
     except Exception as e:
         print(f"[Wake] Warning: could not ensure feature models: {e}", flush=True)
 
-    try:
-        model = Model(wakeword_model_paths=[model_path])
-    except TypeError:
-        # Older API uses wakeword_models
-        try:
-            model = Model(wakeword_models=[model_path])
-        except Exception:
-            model = Model()
-
-    print("[Wake] Model loaded successfully", flush=True)
+    model = Model(wakeword_model_paths=[model_path])
+    loaded = list(model.models.keys()) if hasattr(model, 'models') else list(model.prediction_buffer.keys())
+    print(f"[Wake] Models loaded: {loaded}", flush=True)
+    if not loaded:
+        print("[Wake] FATAL: No models loaded! Exiting.", flush=True)
+        sys.exit(1)
 
     # Step 4: Connect to Node.js TCP server
     print(f"[Wake] Connecting to Node.js on {HOST}:{PORT}...", flush=True)
