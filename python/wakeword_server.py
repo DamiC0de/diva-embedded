@@ -40,9 +40,8 @@ SILENCE_TIMEOUT_S = 2.5
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 500  # RMS threshold for VAD
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
 MODEL_NAME = "hey_jarvis_v0.1"
-MODEL_FILE = f"{MODEL_NAME}.tflite"
+MODEL_FILE = f"{MODEL_NAME}.onnx"
 MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{MODEL_FILE}"
 
 
@@ -78,11 +77,24 @@ def detect_respeaker_card() -> str:
 # Download wake word model if missing
 # ---------------------------------------------------------------------------
 def ensure_model() -> str:
-    """Download hey_jarvis model if not present. Returns path to model file."""
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    model_path = os.path.join(MODEL_DIR, MODEL_FILE)
+    """Find or download hey_jarvis model. Returns path to model file."""
+    # First check in openwakeword package directory
+    try:
+        import openwakeword
+        pkg_dir = os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models")
+        pkg_model = os.path.join(pkg_dir, MODEL_FILE)
+        if os.path.exists(pkg_model) and os.path.getsize(pkg_model) > 100000:
+            print(f"[Wake] Model found in package: {pkg_model}", flush=True)
+            return pkg_model
+    except Exception:
+        pass
 
-    if os.path.exists(model_path):
+    # Fallback: download to project models dir
+    model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, MODEL_FILE)
+
+    if os.path.exists(model_path) and os.path.getsize(model_path) > 100000:
         print(f"[Wake] Model found: {model_path}", flush=True)
         return model_path
 
@@ -212,30 +224,34 @@ def main():
         print("[Wake] ERROR: openwakeword not installed. Run: pip3 install openwakeword", flush=True)
         sys.exit(1)
 
-    # Also ensure embedding/melspectrogram models are downloaded
+    # Ensure embedding/melspectrogram ONNX models are available
     try:
         import openwakeword
         pkg_dir = os.path.dirname(openwakeword.__file__)
         res_dir = os.path.join(pkg_dir, "resources", "models")
         os.makedirs(res_dir, exist_ok=True)
-        for feat in ["melspectrogram.tflite", "embedding_model.tflite"]:
-            feat_path = os.path.join(res_dir, feat)
-            if not os.path.exists(feat_path) or os.path.getsize(feat_path) < 10000:
-                feat_url = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{feat}"
-                print(f"[Wake] Downloading {feat}...", flush=True)
-                urllib.request.urlretrieve(feat_url, feat_path)
+        # Download onnx feature models and copy over tflite names (openwakeword defaults to tflite)
+        for feat in ["melspectrogram", "embedding_model"]:
+            onnx_path = os.path.join(res_dir, f"{feat}.onnx")
+            tflite_path = os.path.join(res_dir, f"{feat}.tflite")
+            # Download onnx if missing
+            if not os.path.exists(onnx_path) or os.path.getsize(onnx_path) < 10000:
+                url = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{feat}.onnx"
+                print(f"[Wake] Downloading {feat}.onnx...", flush=True)
+                urllib.request.urlretrieve(url, onnx_path)
+            # Copy onnx over tflite so the default loader finds it
+            import shutil
+            shutil.copy2(onnx_path, tflite_path)
     except Exception as e:
         print(f"[Wake] Warning: could not ensure feature models: {e}", flush=True)
 
     try:
-        model = Model(wakeword_models=[model_path])
-    except Exception as e1:
-        print(f"[Wake] Model load attempt 1 failed: {e1}", flush=True)
+        model = Model(wakeword_model_paths=[model_path])
+    except TypeError:
+        # Older API uses wakeword_models
         try:
-            model = Model(wakeword_models=[model_path], inference_framework="tflite")
-        except Exception as e2:
-            print(f"[Wake] Model load attempt 2 failed: {e2}", flush=True)
-            # Last resort: load all default models
+            model = Model(wakeword_models=[model_path])
+        except Exception:
             model = Model()
 
     print("[Wake] Model loaded successfully", flush=True)
