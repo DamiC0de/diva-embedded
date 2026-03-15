@@ -35,12 +35,24 @@ async function init(): Promise<void> {
     claude.setMemorySummary(memorySummary);
   }
 
-  // Start AEC first (creates FIFOs + opens audio device)
-  await aec.start();
-  // Wait for AEC to stabilize and FIFOs to be ready
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Start AEC (optional — if it fails, wake word uses direct mic)
+  try {
+    await aec.start();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } catch (err) {
+    console.warn("[Diva] AEC failed to start, continuing without echo cancellation:", (err as Error).message);
+  }
 
-  // THEN start Wake Word (reads from FIFO)
+  // If AEC crashed, remove FIFOs so Python uses direct mic
+  if (!aec.running) {
+    const { unlink } = await import("node:fs/promises");
+    for (const f of ["/tmp/ec.input", "/tmp/ec.output"]) {
+      await unlink(f).catch(() => {});
+    }
+    console.log("[Diva] FIFOs removed — wake word will use direct microphone");
+  }
+
+  // Start Wake Word detection
   await wakeWord.start();
 
   // Wire up wake word detection
