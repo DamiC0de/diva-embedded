@@ -1,6 +1,6 @@
 import "dotenv/config";
 import * as net from "node:net";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { transcribeGroq } from "./stt/groq-cloud.js";
 import { ClaudeClient } from "./llm/claude.js";
 import { synthesizeToFile } from "./tts/piper.js";
@@ -114,35 +114,52 @@ async function main(): Promise<void> {
 
   const server = net.createServer(handleConnection);
 
+  // Kill anything on port 9001 BEFORE we try to listen
+  try {
+    execSync(`fuser -k ${PORT}/tcp 2>/dev/null`, { timeout: 3000 });
+  } catch {}
+
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
-      console.log(`[Diva] Port ${PORT} in use, killing existing process...`);
-      try {
-        execSync(`fuser -k ${PORT}/tcp`, { timeout: 3000 });
-      } catch {}
+      console.error(`[Diva] Port ${PORT} still in use after cleanup. Retrying in 2s...`);
       setTimeout(() => {
         server.close();
         server.listen(PORT, HOST);
-      }, 1000);
+      }, 2000);
     } else {
       console.error("[Diva] Server error:", err);
     }
   });
 
-  // Enable port reuse
+  // Wait for port to be free
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   server.listen(PORT, HOST, () => {
     console.log(`[Diva] TCP server listening on ${HOST}:${PORT}`);
-    console.log("[Diva] Waiting for Python client...");
-  });
+    console.log("[Diva] Starting Python wakeword process...");
 
-  // Graceful shutdown
-  const shutdown = () => {
-    console.log("\n[Diva] Shutting down...");
-    server.close();
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+    // Launch Python wakeword as child process
+    const pythonProc = spawn("python3", ["python/wakeword_server.py"], {
+      stdio: ["ignore", "inherit", "inherit"],
+      cwd: process.cwd(),
+    });
+
+    pythonProc.on("error", (err) => console.error("[Diva] Python error:", err.message));
+    pythonProc.on("close", (code) => {
+      console.log(`[Diva] Python exited with code ${code}`);
+      if (code !== 0) process.exit(1);
+    });
+
+    // Graceful shutdown with Python cleanup
+    const shutdown = () => {
+      console.log("\n[Diva] Shutting down...");
+      pythonProc.kill("SIGTERM");
+      server.close();
+      setTimeout(() => process.exit(0), 2000);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  });
 }
 
 main().catch((err) => {
