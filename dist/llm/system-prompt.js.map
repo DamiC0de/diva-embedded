@@ -1,0 +1,1 @@
+{"version":3,"file":"system-prompt.js","sourceRoot":"","sources":["../../src/llm/system-prompt.ts"],"names":[],"mappings":"AAAA;;GAEG;AACH,MAAM,UAAU,iBAAiB,CAAC,aAAsB;IACtD,IAAI,MAAM,GAAG;;;;;;;;;;;;0EAY2D,CAAC;IAEzE,IAAI,aAAa,EAAE,CAAC;QAClB,MAAM,IAAI,8BAA8B,aAAa,EAAE,CAAC;IAC1D,CAAC;IAED,OAAO,MAAM,CAAC;AAChB,CAAC"}

@@ -35,10 +35,12 @@ PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
-THRESHOLD = 0.5
-SILENCE_TIMEOUT_S = 2.5
+THRESHOLD = 0.6
+SILENCE_TIMEOUT_S = 1.5
 MAX_RECORD_S = 30
-ENERGY_THRESHOLD = 500  # RMS threshold for VAD
+ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
+FOLLOW_UP_TIMEOUT_S = 1
+_pending_messages = []  # Buffer for messages received during speak_tts
 
 MODEL_NAME = "hey_jarvis_v0.1"
 MODEL_FILE = f"{MODEL_NAME}.onnx"
@@ -77,8 +79,14 @@ def detect_respeaker_card() -> str:
 # Download wake word model if missing
 # ---------------------------------------------------------------------------
 def ensure_model() -> str:
-    """Find or download hey_jarvis model. Returns path to model file."""
-    # First check in openwakeword package directory
+    """Find custom or pre-trained wake word model. Returns path to model file."""
+    # First check in assets directory (custom models)
+    assets_model = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", MODEL_FILE)
+    if os.path.exists(assets_model) and os.path.getsize(assets_model) > 1000:
+        print(f"[Wake] Custom model found: {assets_model}", flush=True)
+        return assets_model
+
+    # Then check in openwakeword package directory
     try:
         import openwakeword
         pkg_dir = os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models")
@@ -113,13 +121,32 @@ def ensure_model() -> str:
 # Audio helpers
 # ---------------------------------------------------------------------------
 def open_mic(device: str) -> subprocess.Popen:
-    """Open microphone via arecord, returns Popen with stdout as raw PCM."""
+    """Open microphone via arecord with retry on busy device."""
+    for attempt in range(3):
+        try:
+            proc = subprocess.Popen(
+                ["arecord", "-D", device, "-f", "S16_LE", "-r", str(SAMPLE_RATE),
+                 "-c", "1", "-t", "raw", "-q"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            # Check if it started OK (wait a tiny bit)
+            time.sleep(0.1)
+            if proc.poll() is not None:
+                raise RuntimeError(f"arecord exited with {proc.returncode}")
+            print(f"[Wake] Mic opened on {device} (pid={proc.pid})", flush=True)
+            return proc
+        except Exception as e:
+            print(f"[Wake] Mic open attempt {attempt+1} failed: {e}", flush=True)
+            # Kill any lingering arecord
+            subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+            time.sleep(0.5)
+    # Last resort
     proc = subprocess.Popen(
         ["arecord", "-D", device, "-f", "S16_LE", "-r", str(SAMPLE_RATE),
          "-c", "1", "-t", "raw", "-q"],
         stdout=subprocess.PIPE
     )
-    print(f"[Wake] Mic opened on {device} (pid={proc.pid})", flush=True)
+    print(f"[Wake] Mic opened on {device} (pid={proc.pid}) [last resort]", flush=True)
     return proc
 
 
@@ -128,15 +155,90 @@ def close_mic(proc: subprocess.Popen | None):
     if proc is None:
         return
     try:
-        proc.terminate()
-        proc.wait(timeout=3)
+        proc.kill()
+        proc.wait(timeout=2)
     except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        pass
+    # Ensure ALSA device is released
+    time.sleep(0.5)
     print("[Wake] Mic closed", flush=True)
 
+
+def speak_tts(text: str, device: str, oww_model=None, conn=None):
+    """TTS via Piper HTTP server (model stays loaded) + aplay. Returns keyword or False."""
+    print(f"[Wake] Speaking: {text[:60]}...", flush=True)
+    try:
+        # Use Piper HTTP server (model already in memory = fast)
+        req = urllib.request.Request(
+            "http://localhost:8880/v1/audio/speech",
+            data=json.dumps({"input": text, "voice": "fr_FR-siwis-medium", "response_format": "wav"}).encode(),
+            headers={"Content-Type": "application/json"}
+        )
+        wav_data = urllib.request.urlopen(req, timeout=15).read()
+        # Write to temp file and play
+        tmp_wav = "/tmp/diva_speak.wav"
+        with open(tmp_wav, "wb") as f:
+            f.write(wav_data)
+        play_proc = subprocess.Popen(
+            ["aplay", "-D", device, "-q", tmp_wav],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        piper_proc = None  # No piper process to manage
+        
+        # Monitor for keyword barge-in during playback
+        if conn:
+            mic_listen = subprocess.Popen(
+                ["arecord", "-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            )
+            CHUNK_DURATION = 1.5
+            BARGEIN_RATE = 16000
+            BARGEIN_BYTES = int(BARGEIN_RATE * 2 * CHUNK_DURATION)
+            grace_start = time.time()
+            while play_proc.poll() is None:
+                raw = mic_listen.stdout.read(BARGEIN_BYTES)
+                if not raw:
+                    break
+                if time.time() - grace_start < 1.0:
+                    continue
+                try:
+                    wav_data = pcm_to_wav_bytes(raw)
+                    b64_audio = base64.b64encode(wav_data).decode("ascii")
+                    send_json(conn, {"type": "keyword_check", "data": b64_audio})
+                    response = recv_json(conn, timeout=3)
+                    if response and response.get("type") == "keyword_detected":
+                        keyword = response.get("keyword", "")
+                        print(f"[Wake] KEYWORD BARGE-IN! Detected '{keyword}'", flush=True)
+                        play_proc.kill()
+                        pass  # piper_proc not used
+                        try:
+                            mic_listen.kill()
+                            mic_listen.wait(timeout=1)
+                        except Exception:
+                            pass
+                        return keyword
+                    elif response and response.get("type") not in (None, "keyword_not_detected"):
+                        _pending_messages.append(response)
+                except Exception as e:
+                    print(f"[Wake] Keyword check error: {e}", flush=True)
+            try:
+                mic_listen.kill()
+                mic_listen.wait(timeout=1)
+            except Exception:
+                pass
+        
+        play_proc.wait(timeout=30)
+        print("[Wake] Speaking done", flush=True)
+        return False
+    except Exception as e:
+        print(f"[Wake] speak_tts error: {e}", flush=True)
+        return False
+
+def recv_json_buffered(conn, timeout=30):
+    """Read from pending buffer first, then TCP."""
+    if _pending_messages:
+        return _pending_messages.pop(0)
+    return recv_json(conn, timeout=timeout)
 
 def compute_rms(raw: bytes) -> float:
     """Compute RMS energy of 16-bit PCM audio."""
@@ -161,20 +263,76 @@ def pcm_to_wav_bytes(pcm: bytes) -> bytes:
         os.unlink(tmp.name)
 
 
-def play_wav(path: str, device: str):
-    """Play a WAV file via aplay."""
+def play_wav(path: str, device: str, oww_model=None, conn=None):
+    """Play a WAV file via aplay. During playback, record mic chunks and send to Node for keyword detection."""
+    INTERRUPT_KEYWORDS = ['stop', 'arrête', 'tais-toi', 'ta gueule', 'attend', 'attends', 'diva', 'hey jarvis']
+    KEYWORD_CHUNK_S = 1.5  # Record 1.5s chunks for keyword detection
+    
     print(f"[Wake] Playing {path}...", flush=True)
     try:
-        subprocess.run(
+        play_proc = subprocess.Popen(
             ["aplay", "-D", device, path],
-            timeout=60, capture_output=True
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        print("[Wake] Playback done", flush=True)
-    except subprocess.TimeoutExpired:
-        print("[Wake] Playback timed out", flush=True)
+        
+        if conn is None:
+            # No connection for keyword check — just wait
+            play_proc.wait()
+            print("[Wake] Playback done", flush=True)
+            return False
+        
+        # Open mic to listen during playback
+        mic_listen = subprocess.Popen(
+            ["arecord", "-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+        
+        barged = False
+        play_start = time.time()
+        chunk_bytes = int(KEYWORD_CHUNK_S * SAMPLE_RATE * 2)  # 1.5s of 16kHz 16-bit
+        
+        while play_proc.poll() is None:
+            # Skip first 1.5s (speaker startup echo)
+            if time.time() - play_start < 1.5:
+                mic_listen.stdout.read(BYTES_PER_CHUNK)
+                continue
+            
+            # Read 1.5s of audio
+            raw = mic_listen.stdout.read(chunk_bytes)
+            if not raw or len(raw) < chunk_bytes // 2:
+                continue
+            
+            # Check RMS — only send to STT if there's actual sound
+            audio = np.frombuffer(raw, dtype=np.int16).astype(float)
+            rms = int((sum(x*x for x in audio) / len(audio)) ** 0.5)
+            if rms < 3000:
+                continue  # Too quiet, skip
+            
+            # Send to Node for keyword check via Groq STT
+            wav_data = pcm_to_wav_bytes(raw)
+            b64_audio = base64.b64encode(wav_data).decode("ascii")
+            
+            try:
+                send_json(conn, {"type": "keyword_check", "data": b64_audio})
+                response = recv_json(conn, timeout=3)
+                if response and response.get("type") == "keyword_detected":
+                    keyword = response.get("keyword", "")
+                    print(f"[Wake] KEYWORD BARGE-IN! Detected '{keyword}' — Cutting playback...", flush=True)
+                    play_proc.kill()
+                    barged = keyword
+                    break
+            except Exception as e:
+                print(f"[Wake] Keyword check error: {e}", flush=True)
+        
+        mic_listen.kill()
+        mic_listen.wait()
+        if not barged:
+            play_proc.wait()
+            print("[Wake] Playback done", flush=True)
+        return barged  # False or keyword string
     except Exception as e:
         print(f"[Wake] Playback error: {e}", flush=True)
-
+        return False
 
 # ---------------------------------------------------------------------------
 # TCP communication
@@ -300,15 +458,21 @@ def main():
                     traceback.print_exc()
                     continue
 
-                for model_name, scores in model.prediction_buffer.items():
-                    if len(scores) > 0 and scores[-1] > THRESHOLD:
-                        print(f"[Wake] *** WAKE WORD DETECTED *** (score={scores[-1]:.3f})", flush=True)
+                # Use raw prediction scores (prediction_buffer saturates with custom models)
+                for model_name in prediction:
+                    raw_score = prediction[model_name]
+                    if raw_score > THRESHOLD:
+                        print(f"[Wake] *** WAKE WORD DETECTED *** (score={raw_score:.3f})", flush=True)
                         model.reset()
                         detected = True
                         break
 
             # --- Voice capture phase ---
-            # Keep using the same mic process (already open)
+            # Say "Oui?" instantly (pre-generated WAV)
+            close_mic(mic_proc)
+            oui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "oui.wav")
+            subprocess.run(["aplay", "-D", device, "-q", oui_path], timeout=3)
+            mic_proc = open_mic(device)
             print("[Wake] Recording voice...", flush=True)
             chunks = []
             last_voice_time = time.time()
@@ -354,6 +518,49 @@ def main():
             wav_data = pcm_to_wav_bytes(pcm_data)
             b64_audio = base64.b64encode(wav_data).decode("ascii")
 
+            # Play a filler phrase while waiting for LLM response
+            import threading
+            import random
+            import glob
+
+            def play_filler():
+                FILLER_PHRASES = [
+                    "Hmm, laisse-moi réfléchir...",
+                    "Alors voyons voir...",
+                    "Bonne question...",
+                    "Attends deux secondes...",
+                    "Je réfléchis...",
+                    "Intéressant...",
+                ]
+                phrase = random.choice(FILLER_PHRASES)
+                print(f"[Wake] Playing filler: {phrase}", flush=True)
+                try:
+                    subprocess.run(
+                        f"echo '{phrase}' | /opt/piper/piper --model /opt/piper/fr_FR-siwis-medium.onnx --output_raw 2>/dev/null | aplay -D {device} -f S16_LE -r 22050 -c 1 -q",
+                        shell=True, timeout=8
+                    )
+                except Exception as e:
+                    print(f"[Wake] Filler error: {e}", flush=True)
+                return
+                filler_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "fillers")
+                categories = ["casual", "factual"]
+                mp3s = []
+                for cat in categories:
+                    mp3s.extend(glob.glob(os.path.join(filler_dir, cat, "*.mp3")))
+                if not mp3s:
+                    mp3s = glob.glob(os.path.join(filler_dir, "*.mp3"))
+                if mp3s:
+                    filler = random.choice(mp3s)
+                    print(f"[Wake] Playing filler: {os.path.basename(filler)}", flush=True)
+                    # Convert MP3 to WAV on the fly and play
+                    subprocess.run(
+                        f"ffmpeg -y -i '{filler}' -f wav -ar 16000 -ac 1 /tmp/filler.wav 2>/dev/null && aplay -D {device} /tmp/filler.wav",
+                        shell=True, capture_output=True, timeout=10
+                    )
+
+            # filler_thread = threading.Thread(target=play_filler, daemon=True)
+            # filler_thread.start()
+
             print("[Wake] Sending audio to Node.js...", flush=True)
             send_json(conn, {
                 "type": "audio",
@@ -364,10 +571,149 @@ def main():
             print("[Wake] Waiting for response...", flush=True)
             response = recv_json(conn, timeout=60)
 
-            if response and response.get("type") == "play":
-                wav_path = response.get("path", "")
-                if wav_path and os.path.exists(wav_path):
-                    play_wav(wav_path, device)
+            # Wait for filler to finish before playing response
+            # filler_thread.join(timeout=5)
+
+            # Skip filler messages (sent by Node for iOS, not needed here)
+            while response and response.get("type") == "play_filler":
+                response = recv_json(conn, timeout=60)
+            if response and response.get("type") == "shutdown":
+                print("[Wake] Shutdown command — back to wake word", flush=True)
+                continue
+            if response and response.get("type") == "speak":
+                text = response.get("text", "")
+                if text:
+                    SHUTDOWN_KEYWORDS = ["ta gueule", "tais-toi", "ferme"]
+                    
+                    # Speak first sentence via TTS pipe (no file)
+                    barged = speak_tts(text, device, oww_model=model, conn=conn)
+                    # Play queued sentences
+                    if not barged:
+                        while True:
+                            q = recv_json_buffered(conn, timeout=30)
+                            if not q:
+                                break
+                            if q.get("type") == "speak_queue":
+                                qtext = q.get("text", "")
+                                if qtext:
+                                    barged = speak_tts(qtext, device, oww_model=model, conn=conn)
+                                    if barged:
+                                        while True:
+                                            d = recv_json_buffered(conn, timeout=5)
+                                            if not d or d.get("type") == "play_done":
+                                                break
+                                        break
+                            elif q.get("type") == "play_done":
+                                break
+                            else:
+                                break
+                    
+                    # If shutdown keyword, go back to wake word
+                    if barged and any(kw in str(barged).lower() for kw in SHUTDOWN_KEYWORDS):
+                        print("[Wake] Shutdown keyword — ending conversation", flush=True)
+                        continue
+                    
+                    # Conversation loop — keep listening after each response
+                    while True:
+                        # After barge-in, reset flag (no "Oui?" in follow-up)
+                        barged = False
+                        print(f"[Wake] Follow-up mode ({FOLLOW_UP_TIMEOUT_S}s)...", flush=True)
+                        close_mic(mic_proc)
+                        mic_proc = open_mic(device)
+                        # Flush 1s of audio buffer (discard barge-in residual)
+                        flush_end = time.time() + 1.0
+                        while time.time() < flush_end:
+                            mic_proc.stdout.read(BYTES_PER_CHUNK)
+                        follow_start = time.time()
+                        follow_chunks = []
+                        follow_silence_start = None
+                        got_speech = False
+                        
+                        while time.time() - follow_start < FOLLOW_UP_TIMEOUT_S + 30:
+                            raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
+                            if not raw or len(raw) < BYTES_PER_CHUNK:
+                                time.sleep(0.01)
+                                continue
+                            follow_chunks.append(raw)
+                            rms = int((sum(x*x for x in np.frombuffer(raw, dtype=np.int16).astype(float)) / len(np.frombuffer(raw, dtype=np.int16))) ** 0.5)
+                            if rms > ENERGY_THRESHOLD:
+                                got_speech = True
+                                follow_silence_start = None
+                            else:
+                                if got_speech and follow_silence_start is None:
+                                    follow_silence_start = time.time()
+                                elif got_speech and follow_silence_start and time.time() - follow_silence_start > SILENCE_TIMEOUT_S:
+                                    print("[Wake] Follow-up captured!", flush=True)
+                                    break
+                                elif not got_speech and time.time() - follow_start > FOLLOW_UP_TIMEOUT_S:
+                                    print("[Wake] No follow-up detected, back to wake word", flush=True)
+                                    follow_chunks = []
+                                    break
+                        
+                        # No speech detected — exit conversation
+                        if not follow_chunks or not got_speech:
+                            break
+                        
+                        # Process follow-up audio
+                        close_mic(mic_proc)
+                        mic_proc = None
+                        pcm_data = b"".join(follow_chunks)
+                        duration_s = len(pcm_data) / (SAMPLE_RATE * 2)
+                        print(f"[Wake] Follow-up: {duration_s:.1f}s ({len(pcm_data)} bytes)", flush=True)
+                        
+                        if duration_s < 0.3:
+                            break
+                        
+                        wav_data = pcm_to_wav_bytes(pcm_data)
+                        b64_audio = base64.b64encode(wav_data).decode("ascii")
+                        # filler_thread = threading.Thread(target=play_filler, daemon=True)
+                        # filler_thread.start()
+                        send_json(conn, {"type": "audio", "data": b64_audio})
+                        resp2 = recv_json(conn, timeout=60)
+                        # filler_thread.join(timeout=5)
+                        
+                        while resp2 and resp2.get("type") == "play_filler":
+                            resp2 = recv_json(conn, timeout=60)
+                        if resp2 and resp2.get("type") == "shutdown":
+                            print("[Wake] Shutdown command — ending conversation", flush=True)
+                            break
+                        if resp2 and resp2.get("type") == "speak":
+                            text2 = resp2.get("text", "")
+                            if text2:
+                                barged2 = speak_tts(text2, device, oww_model=model, conn=conn)
+                                # Play queued sentences
+                                if not barged2:
+                                    while True:
+                                        q2 = recv_json_buffered(conn, timeout=30)
+                                        if not q2:
+                                            break
+                                        if q2.get("type") == "speak_queue":
+                                            qt = q2.get("text", "")
+                                            if qt:
+                                                barged2 = speak_tts(qt, device, oww_model=model, conn=conn)
+                                                if barged2:
+                                                    while True:
+                                                        d2 = recv_json_buffered(conn, timeout=5)
+                                                        if not d2 or d2.get("type") == "play_done":
+                                                            break
+                                                    break
+                                        elif q2.get("type") == "play_done":
+                                            break
+                                        else:
+                                            break
+                                if barged2 and any(kw in str(barged2).lower() for kw in SHUTDOWN_KEYWORDS):
+                                    print("[Wake] Shutdown keyword — ending conversation", flush=True)
+                                    break
+                                barged = barged2  # Pass keyword so "Oui?" plays
+                                # Otherwise loop back to follow-up
+                            else:
+                                break
+                        elif resp2 and resp2.get("type") == "error":
+                            print(f"[Wake] Node.js error: {resp2.get('message', 'unknown')}", flush=True)
+                            break
+                        else:
+                            break
+                    continue
                 else:
                     print(f"[Wake] WAV file not found: {wav_path}", flush=True)
             elif response and response.get("type") == "error":
