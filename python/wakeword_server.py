@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Wake word detection server for Diva.
-Uses microphone directly via PyAudio or reads from FIFO.
+Uses microphone directly via ALSA or reads from AEC FIFO.
 Sends detections via TCP socket to Node.js.
 """
 
@@ -10,12 +10,13 @@ import socket
 import sys
 import os
 import time
+import subprocess
 import numpy as np
 
 try:
     from openwakeword.model import Model
 except ImportError:
-    print(json.dumps({"type": "error", "message": "openwakeword not installed"}))
+    print("ERROR: openwakeword not installed", flush=True)
     sys.exit(1)
 
 FIFO_PATH = os.environ.get("WAKEWORD_FIFO", "/tmp/ec.output")
@@ -29,23 +30,32 @@ THRESHOLD = 0.5
 def main():
     print("Loading wake word model...", flush=True)
 
-    # OpenWakeWord 0.4.0 — load default models (includes hey_jarvis)
     try:
         model = Model(inference_framework="onnx")
     except TypeError:
-        # Fallback for different API versions
         model = Model()
 
     print("Wake word model loaded", flush=True)
 
-    # Start TCP server
+    # Start TCP server with aggressive reuse
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    except (AttributeError, OSError):
+        pass
+
+    # Kill anything on port 9001 before binding
+    try:
+        subprocess.run(["fuser", "-k", "9001/tcp"], capture_output=True, timeout=3)
+        time.sleep(0.5)
+    except Exception:
+        pass
+
     server.bind((HOST, PORT))
     server.listen(1)
     print(f"TCP server listening on {HOST}:{PORT}", flush=True)
 
-    # Accept connection from Node.js
     server.settimeout(30)
     try:
         conn, addr = server.accept()
@@ -55,29 +65,36 @@ def main():
         server.close()
         sys.exit(1)
 
-    # Open the AEC output FIFO (or direct audio)
+    # Open audio source
     fifo = None
+
+    # Wait for FIFO to appear (AEC may still be starting)
+    for i in range(10):
+        if os.path.exists(FIFO_PATH):
+            break
+        print(f"Waiting for FIFO {FIFO_PATH}... ({i+1}/10)", flush=True)
+        time.sleep(1)
+
     if os.path.exists(FIFO_PATH):
         fifo = open(FIFO_PATH, "rb")
         print(f"Reading audio from FIFO: {FIFO_PATH}", flush=True)
     else:
-        # Fallback: use microphone directly via ALSA
-        print(f"FIFO {FIFO_PATH} not found, using microphone directly", flush=True)
+        # Fallback: direct mic
+        print(f"FIFO not found, using microphone directly", flush=True)
+        card = os.environ.get("AUDIO_INPUT_DEVICE", "plughw:5")
         try:
-            import subprocess
-            card = os.environ.get("AUDIO_INPUT_DEVICE", "plughw:5")
-            fifo = subprocess.Popen(
+            proc = subprocess.Popen(
                 ["arecord", "-D", card, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
                 stdout=subprocess.PIPE
-            ).stdout
+            )
+            fifo = proc.stdout
         except Exception as e:
-            msg = json.dumps({"type": "error", "message": f"Cannot open mic: {e}"})
-            conn.sendall((msg + "\n").encode())
+            print(f"Cannot open mic: {e}", flush=True)
             conn.close()
             server.close()
             sys.exit(1)
 
-    bytes_per_chunk = CHUNK_SAMPLES * 2  # 16-bit = 2 bytes per sample
+    bytes_per_chunk = CHUNK_SAMPLES * 2
 
     try:
         while True:
@@ -86,13 +103,9 @@ def main():
                 time.sleep(0.01)
                 continue
 
-            # Convert to float32
             audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-
-            # Run prediction
             model.predict(audio)
 
-            # Check all models for detection
             for model_name, scores in model.prediction_buffer.items():
                 current_score = scores[-1] if len(scores) > 0 else 0.0
                 if current_score > THRESHOLD:

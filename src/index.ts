@@ -35,10 +35,12 @@ async function init(): Promise<void> {
     claude.setMemorySummary(memorySummary);
   }
 
-  // Start AEC
+  // Start AEC first (creates FIFOs + opens audio device)
   await aec.start();
+  // Wait for AEC to stabilize and FIFOs to be ready
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 
-  // Start Wake Word detection
+  // THEN start Wake Word (reads from FIFO)
   await wakeWord.start();
 
   // Wire up wake word detection
