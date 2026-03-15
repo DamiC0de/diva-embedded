@@ -8,3 +8,6 @@ data/memory/conversations/
 *.wav
 /tmp/
 .DS_Store
+*.backup
+*.before_speaker
+python/temp_header.py

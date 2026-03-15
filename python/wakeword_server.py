@@ -27,6 +27,18 @@ import urllib.request
 
 import numpy as np
 
+# --- Silero VAD ---
+try:
+    import torch
+    from silero_vad import load_silero_vad
+    vad_model = load_silero_vad()
+    VAD_AVAILABLE = True
+    print("[Wake] Silero VAD loaded!", flush=True)
+except Exception as e:
+    print(f"[Wake] Silero VAD not available ({e}), using RMS fallback", flush=True)
+    VAD_AVAILABLE = False
+    vad_model = None
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -39,7 +51,7 @@ THRESHOLD = 0.6
 SILENCE_TIMEOUT_S = 1.5
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
-FOLLOW_UP_TIMEOUT_S = 1
+FOLLOW_UP_TIMEOUT_S = 1.5
 _pending_messages = []  # Buffer for messages received during speak_tts
 
 MODEL_NAME = "hey_jarvis_v0.1"
@@ -246,6 +258,26 @@ def compute_rms(raw: bytes) -> float:
     if len(samples) == 0:
         return 0.0
     return float(np.sqrt(np.mean(samples ** 2)))
+
+
+def is_speech_vad(raw: bytes) -> bool:
+    """Check if audio chunk contains speech using Silero VAD.
+    Falls back to RMS threshold if Silero not available."""
+    if not VAD_AVAILABLE or vad_model is None:
+        return compute_rms(raw) > ENERGY_THRESHOLD
+    
+    try:
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        tensor = torch.from_numpy(samples)
+        # Silero VAD expects 16kHz, 512 sample windows
+        for i in range(0, len(tensor) - 512, 512):
+            chunk = tensor[i:i+512]
+            confidence = vad_model(chunk, 16000).item()
+            if confidence > 0.5:
+                return True
+        return False
+    except Exception:
+        return compute_rms(raw) > ENERGY_THRESHOLD
 
 
 def pcm_to_wav_bytes(pcm: bytes) -> bytes:
@@ -485,9 +517,7 @@ def main():
                     continue
 
                 chunks.append(raw)
-                rms = compute_rms(raw)
-
-                if rms > ENERGY_THRESHOLD:
+                if is_speech_vad(raw):
                     last_voice_time = time.time()
 
                 now = time.time()
@@ -575,7 +605,7 @@ def main():
             # filler_thread.join(timeout=5)
 
             # Skip filler messages (sent by Node for iOS, not needed here)
-            while response and response.get("type") == "play_filler":
+            while response and response.get("type") in ("play_filler", "keyword_not_detected", "keyword_detected"):
                 response = recv_json(conn, timeout=60)
             if response and response.get("type") == "shutdown":
                 print("[Wake] Shutdown command — back to wake word", flush=True)

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import * as net from "node:net";
 import { execSync, spawn } from "node:child_process";
-import { transcribeGroq } from "./stt/groq-cloud.js";
+import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeClient } from "./llm/claude.js";
 import { synthesizeToFile } from "./tts/piper.js";
 import { handleBraveSearch } from "./tools/brave-search.js";
@@ -75,7 +75,7 @@ async function handleAudio(socket: net.Socket, b64Audio: string): Promise<void> 
 
   // 2. Transcribe via Groq Whisper
   console.log("[Diva] Transcribing...");
-  const transcription = await transcribeGroq(wavBuffer);
+  const transcription = await transcribeLocal(wavBuffer);
   console.log(`[Diva] Transcription: "${transcription}"`);
 
   if (!transcription.trim()) {

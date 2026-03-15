@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { toolDefinitions, type ToolName } from "./tools.js";
 
-const MODEL = "claude-3-haiku-20240307";
+const MODEL = "claude-haiku-4-5-20251001";
 
 interface ToolHandler {
   (input: Record<string, string>): Promise<string>;
