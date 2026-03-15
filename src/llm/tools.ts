@@ -1,9 +1,9 @@
 import type Anthropic from "@anthropic-ai/sdk";
 
-export type ToolName = "brave_search" | "web_scrape" | "memory_read" | "memory_write";
+export type ToolName = "brave_search" | "memory_read" | "memory_write";
 
 /**
- * Tool definitions for Claude Haiku tool use.
+ * Tool definitions for Claude Haiku — PROTO mode (no web_scrape).
  */
 export const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -19,21 +19,6 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
       },
       required: ["query"],
-    },
-  },
-  {
-    name: "web_scrape",
-    description:
-      "Extraire le contenu texte d'une page web. Utilise cet outil pour lire le contenu détaillé d'une URL.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        url: {
-          type: "string",
-          description: "L'URL de la page à scraper",
-        },
-      },
-      required: ["url"],
     },
   },
   {
@@ -71,14 +56,3 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
 ];
-
-/**
- * Parse tool input from Claude's response.
- */
-export function parseToolInput(name: ToolName, input: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input)) {
-    result[key] = String(value);
-  }
-  return result;
-}

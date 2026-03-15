@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-Wake word detection server for Diva.
-Uses microphone directly via ALSA or reads from AEC FIFO.
-Sends detections via TCP socket to Node.js.
+Diva PROTO — Wake word + voice capture + playback.
+Python handles ALL audio. Node.js handles APIs only.
+Communication: TCP JSON lines on port 9001.
+
+Flow:
+1. Open mic, run OpenWakeWord continuously
+2. Wake word detected → stop wake word, capture voice until silence
+3. Send audio as base64 WAV to Node via TCP
+4. Receive play command from Node (WAV path)
+5. Play WAV via aplay
+6. Resume wake word listening
 """
 
 import json
@@ -11,127 +19,336 @@ import sys
 import os
 import time
 import subprocess
+import struct
+import base64
+import wave
+import tempfile
+import urllib.request
+
 import numpy as np
 
-try:
-    from openwakeword.model import Model
-except ImportError:
-    print("ERROR: openwakeword not installed", flush=True)
-    sys.exit(1)
-
-FIFO_PATH = os.environ.get("WAKEWORD_FIFO", "/tmp/ec.output")
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 HOST = "127.0.0.1"
 PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
+BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
 THRESHOLD = 0.5
+SILENCE_TIMEOUT_S = 2.5
+MAX_RECORD_S = 30
+ENERGY_THRESHOLD = 500  # RMS threshold for VAD
+
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+MODEL_NAME = "hey_jarvis_v0.1"
+MODEL_FILE = f"{MODEL_NAME}.onnx"
+MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.1.0/{MODEL_FILE}"
 
 
-def main():
-    print("Loading wake word model...", flush=True)
-
+# ---------------------------------------------------------------------------
+# Auto-detect ReSpeaker card number
+# ---------------------------------------------------------------------------
+def detect_respeaker_card() -> str:
+    """Auto-detect ReSpeaker Lite USB card number via arecord -l."""
     try:
-        model = Model(inference_framework="onnx")
-    except TypeError:
-        model = Model()
+        result = subprocess.run(
+            ["arecord", "-l"], capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            if "ReSpeaker" in line or "respeaker" in line.lower():
+                # Line format: "card X: ..."
+                parts = line.split(":")
+                if parts:
+                    card_str = parts[0].strip().split()[-1]
+                    if card_str.isdigit():
+                        device = f"plughw:{card_str}"
+                        print(f"[Wake] Auto-detected ReSpeaker on {device}", flush=True)
+                        return device
+    except Exception as e:
+        print(f"[Wake] arecord -l failed: {e}", flush=True)
 
-    print("Wake word model loaded", flush=True)
+    # Fallback to env or default
+    fallback = os.environ.get("AUDIO_INPUT_DEVICE", "plughw:5")
+    print(f"[Wake] ReSpeaker not found, using fallback: {fallback}", flush=True)
+    return fallback
 
-    # Start TCP server with aggressive reuse
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+# ---------------------------------------------------------------------------
+# Download wake word model if missing
+# ---------------------------------------------------------------------------
+def ensure_model() -> str:
+    """Download hey_jarvis model if not present. Returns path to model file."""
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    model_path = os.path.join(MODEL_DIR, MODEL_FILE)
+
+    if os.path.exists(model_path):
+        print(f"[Wake] Model found: {model_path}", flush=True)
+        return model_path
+
+    print(f"[Wake] Downloading model from {MODEL_URL}...", flush=True)
     try:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    except (AttributeError, OSError):
-        pass
-
-    # Kill anything on port 9001 before binding
-    try:
-        subprocess.run(["fuser", "-k", "9001/tcp"], capture_output=True, timeout=3)
-        time.sleep(0.5)
-    except Exception:
-        pass
-
-    server.bind((HOST, PORT))
-    server.listen(1)
-    print(f"TCP server listening on {HOST}:{PORT}", flush=True)
-
-    server.settimeout(30)
-    try:
-        conn, addr = server.accept()
-        print(f"Client connected from {addr}", flush=True)
-    except socket.timeout:
-        print("No client connected within timeout", flush=True)
-        server.close()
+        urllib.request.urlretrieve(MODEL_URL, model_path)
+        print(f"[Wake] Model downloaded: {model_path}", flush=True)
+    except Exception as e:
+        print(f"[Wake] ERROR downloading model: {e}", flush=True)
         sys.exit(1)
 
-    # Open audio source
-    fifo = None
+    return model_path
 
-    if os.path.exists(FIFO_PATH) and FIFO_PATH != "/dev/null":
+
+# ---------------------------------------------------------------------------
+# Audio helpers
+# ---------------------------------------------------------------------------
+def open_mic(device: str) -> subprocess.Popen:
+    """Open microphone via arecord, returns Popen with stdout as raw PCM."""
+    proc = subprocess.Popen(
+        ["arecord", "-D", device, "-f", "S16_LE", "-r", str(SAMPLE_RATE),
+         "-c", "1", "-t", "raw", "-q"],
+        stdout=subprocess.PIPE
+    )
+    print(f"[Wake] Mic opened on {device} (pid={proc.pid})", flush=True)
+    return proc
+
+
+def close_mic(proc: subprocess.Popen | None):
+    """Safely close microphone process."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+    except Exception:
         try:
-            import stat
-            if stat.S_ISFIFO(os.stat(FIFO_PATH).st_mode):
-                fifo = open(FIFO_PATH, "rb")
-                print(f"Reading audio from FIFO: {FIFO_PATH}", flush=True)
+            proc.kill()
         except Exception:
             pass
+    print("[Wake] Mic closed", flush=True)
 
-    if fifo is None:
-        # Fallback: direct mic
-        print(f"FIFO not found, using microphone directly", flush=True)
-        card = os.environ.get("AUDIO_INPUT_DEVICE", "plughw:5")
-        try:
-            proc = subprocess.Popen(
-                ["arecord", "-D", card, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
-                stdout=subprocess.PIPE
-            )
-            fifo = proc.stdout
-        except Exception as e:
-            print(f"Cannot open mic: {e}", flush=True)
-            conn.close()
-            server.close()
-            sys.exit(1)
 
-    bytes_per_chunk = CHUNK_SAMPLES * 2
+def compute_rms(raw: bytes) -> float:
+    """Compute RMS energy of 16-bit PCM audio."""
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float64)
+    if len(samples) == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(samples ** 2)))
 
+
+def pcm_to_wav_bytes(pcm: bytes) -> bytes:
+    """Convert raw PCM to WAV format in memory."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    try:
+        with wave.open(tmp.name, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(pcm)
+        with open(tmp.name, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def play_wav(path: str, device: str):
+    """Play a WAV file via aplay."""
+    print(f"[Wake] Playing {path}...", flush=True)
+    try:
+        subprocess.run(
+            ["aplay", "-D", device, path],
+            timeout=60, capture_output=True
+        )
+        print("[Wake] Playback done", flush=True)
+    except subprocess.TimeoutExpired:
+        print("[Wake] Playback timed out", flush=True)
+    except Exception as e:
+        print(f"[Wake] Playback error: {e}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# TCP communication
+# ---------------------------------------------------------------------------
+def send_json(sock: socket.socket, data: dict):
+    """Send a JSON line over TCP."""
+    msg = json.dumps(data) + "\n"
+    sock.sendall(msg.encode())
+
+
+def recv_json(sock: socket.socket, timeout: float = 30.0) -> dict | None:
+    """Receive a JSON line from TCP with timeout."""
+    sock.settimeout(timeout)
+    buf = b""
     try:
         while True:
-            raw = fifo.read(bytes_per_chunk)
-            if not raw or len(raw) < bytes_per_chunk:
-                time.sleep(0.01)
-                continue
+            chunk = sock.recv(4096)
+            if not chunk:
+                return None
+            buf += chunk
+            if b"\n" in buf:
+                line, _ = buf.split(b"\n", 1)
+                return json.loads(line.decode())
+    except socket.timeout:
+        print("[Wake] TCP recv timeout", flush=True)
+        return None
+    except Exception as e:
+        print(f"[Wake] TCP recv error: {e}", flush=True)
+        return None
 
-            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-            model.predict(audio)
 
-            for model_name, scores in model.prediction_buffer.items():
-                current_score = scores[-1] if len(scores) > 0 else 0.0
-                if current_score > THRESHOLD:
-                    detection = {
-                        "type": "detection",
-                        "keyword": "diva",
-                        "score": float(current_score),
-                        "model": model_name,
-                        "timestamp": time.time()
-                    }
-                    msg = json.dumps(detection) + "\n"
-                    try:
-                        conn.sendall(msg.encode())
-                    except BrokenPipeError:
-                        print("Client disconnected", flush=True)
-                        return
-                    model.reset()
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
+def main():
+    # Step 1: Detect hardware
+    device = detect_respeaker_card()
+
+    # Step 2: Ensure model is downloaded
+    model_path = ensure_model()
+
+    # Step 3: Load OpenWakeWord model
+    print("[Wake] Loading wake word model...", flush=True)
+    try:
+        from openwakeword.model import Model
+    except ImportError:
+        print("[Wake] ERROR: openwakeword not installed. Run: pip3 install openwakeword", flush=True)
+        sys.exit(1)
+
+    try:
+        model = Model(
+            wakeword_models=[model_path],
+            inference_framework="onnx"
+        )
+    except TypeError:
+        # Older API fallback
+        try:
+            model = Model(wakeword_models=[model_path])
+        except Exception:
+            model = Model(inference_framework="onnx")
+
+    print("[Wake] Model loaded successfully", flush=True)
+
+    # Step 4: Connect to Node.js TCP server
+    print(f"[Wake] Connecting to Node.js on {HOST}:{PORT}...", flush=True)
+    max_retries = 30
+    conn = None
+    for attempt in range(max_retries):
+        try:
+            conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            conn.connect((HOST, PORT))
+            print(f"[Wake] Connected to Node.js", flush=True)
+            break
+        except ConnectionRefusedError:
+            conn.close()
+            conn = None
+            if attempt < max_retries - 1:
+                time.sleep(1)
+            else:
+                print(f"[Wake] Could not connect to Node.js after {max_retries} attempts", flush=True)
+                sys.exit(1)
+
+    # Step 5: Main loop
+    mic_proc = None
+    try:
+        while True:
+            # --- Wake word detection phase ---
+            print("\n[Wake] Listening for wake word...", flush=True)
+            mic_proc = open_mic(device)
+
+            detected = False
+            while not detected:
+                raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
+                if not raw or len(raw) < BYTES_PER_CHUNK:
+                    time.sleep(0.01)
+                    continue
+
+                audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                model.predict(audio)
+
+                for model_name, scores in model.prediction_buffer.items():
+                    if len(scores) > 0 and scores[-1] > THRESHOLD:
+                        print(f"[Wake] *** WAKE WORD DETECTED *** (score={scores[-1]:.3f})", flush=True)
+                        model.reset()
+                        detected = True
+                        break
+
+            # --- Voice capture phase ---
+            # Keep using the same mic process (already open)
+            print("[Wake] Recording voice...", flush=True)
+            chunks = []
+            last_voice_time = time.time()
+            start_time = time.time()
+
+            while True:
+                raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
+                if not raw or len(raw) < BYTES_PER_CHUNK:
+                    time.sleep(0.01)
+                    continue
+
+                chunks.append(raw)
+                rms = compute_rms(raw)
+
+                if rms > ENERGY_THRESHOLD:
+                    last_voice_time = time.time()
+
+                now = time.time()
+                elapsed = now - start_time
+                silence_duration = now - last_voice_time
+
+                if silence_duration > SILENCE_TIMEOUT_S:
+                    print(f"[Wake] Silence detected after {elapsed:.1f}s", flush=True)
+                    break
+                if elapsed > MAX_RECORD_S:
+                    print(f"[Wake] Max recording time reached ({MAX_RECORD_S}s)", flush=True)
                     break
 
+            # Close mic before sending/playing
+            close_mic(mic_proc)
+            mic_proc = None
+
+            # Check if we got enough audio
+            pcm_data = b"".join(chunks)
+            duration_s = len(pcm_data) / (SAMPLE_RATE * 2)
+            print(f"[Wake] Captured {duration_s:.1f}s of audio ({len(pcm_data)} bytes)", flush=True)
+
+            if duration_s < 0.3:
+                print("[Wake] Audio too short, ignoring", flush=True)
+                continue
+
+            # Convert to WAV and send to Node.js
+            wav_data = pcm_to_wav_bytes(pcm_data)
+            b64_audio = base64.b64encode(wav_data).decode("ascii")
+
+            print("[Wake] Sending audio to Node.js...", flush=True)
+            send_json(conn, {
+                "type": "audio",
+                "data": b64_audio
+            })
+
+            # Wait for response from Node.js
+            print("[Wake] Waiting for response...", flush=True)
+            response = recv_json(conn, timeout=60)
+
+            if response and response.get("type") == "play":
+                wav_path = response.get("path", "")
+                if wav_path and os.path.exists(wav_path):
+                    play_wav(wav_path, device)
+                else:
+                    print(f"[Wake] WAV file not found: {wav_path}", flush=True)
+            elif response and response.get("type") == "error":
+                print(f"[Wake] Node.js error: {response.get('message', 'unknown')}", flush=True)
+            else:
+                print(f"[Wake] Unexpected response: {response}", flush=True)
+
     except KeyboardInterrupt:
-        pass
+        print("\n[Wake] Interrupted by user", flush=True)
+    except BrokenPipeError:
+        print("[Wake] Node.js disconnected", flush=True)
+    except Exception as e:
+        print(f"[Wake] Fatal error: {e}", flush=True)
     finally:
-        if fifo:
-            fifo.close()
-        conn.close()
-        server.close()
-        print("Wake word server stopped", flush=True)
+        close_mic(mic_proc)
+        if conn:
+            conn.close()
+        print("[Wake] Server stopped", flush=True)
 
 
 if __name__ == "__main__":

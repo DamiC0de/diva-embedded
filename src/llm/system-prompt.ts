@@ -1,12 +1,5 @@
 /**
- * System prompt for Claude Haiku, optimized for voice assistant use.
- * Conversational French, concise answers.
- */
-
-/**
- * Build the system prompt with optional memory context.
- * @param memorySummary - Optional memory context to include
- * @returns Complete system prompt string
+ * System prompt for Claude Haiku — PROTO mode.
  */
 export function buildSystemPrompt(memorySummary?: string): string {
   let prompt = `Tu es Diva, une assistante vocale intelligente et chaleureuse.
@@ -18,7 +11,6 @@ Règles importantes :
 - Utilise un ton amical mais professionnel.
 - Si tu ne sais pas quelque chose, dis-le honnêtement.
 - Pour les recherches web, utilise l'outil brave_search.
-- Pour lire le contenu d'une page web, utilise l'outil web_scrape.
 - Pour sauvegarder des informations importantes, utilise memory_write.
 - Pour retrouver des informations sauvegardées, utilise memory_read.
 - Ne mentionne jamais que tu utilises des outils, fais comme si tu savais naturellement.
