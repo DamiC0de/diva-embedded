@@ -11,3 +11,4 @@ data/memory/conversations/
 *.backup
 *.before_speaker
 python/temp_header.py
+data/

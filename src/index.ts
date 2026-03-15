@@ -93,7 +93,7 @@ async function handleAudio(socket: net.Socket, b64Audio: string): Promise<void> 
 
   let response: string;
   if (intent.intent === "local_simple") {
-    const local = handleLocalIntent(intent.category, transcription);
+    const local = await handleLocalIntent(intent.category, transcription);
     if (local.handled && local.response) {
       response = local.response;
       console.log(`[Diva] Local response: "${response}"`);
