@@ -68,17 +68,16 @@ def main():
     # Open audio source
     fifo = None
 
-    # Wait for FIFO to appear (AEC may still be starting)
-    for i in range(10):
-        if os.path.exists(FIFO_PATH):
-            break
-        print(f"Waiting for FIFO {FIFO_PATH}... ({i+1}/10)", flush=True)
-        time.sleep(1)
+    if os.path.exists(FIFO_PATH) and FIFO_PATH != "/dev/null":
+        try:
+            import stat
+            if stat.S_ISFIFO(os.stat(FIFO_PATH).st_mode):
+                fifo = open(FIFO_PATH, "rb")
+                print(f"Reading audio from FIFO: {FIFO_PATH}", flush=True)
+        except Exception:
+            pass
 
-    if os.path.exists(FIFO_PATH):
-        fifo = open(FIFO_PATH, "rb")
-        print(f"Reading audio from FIFO: {FIFO_PATH}", flush=True)
-    else:
+    if fifo is None:
         # Fallback: direct mic
         print(f"FIFO not found, using microphone directly", flush=True)
         card = os.environ.get("AUDIO_INPUT_DEVICE", "plughw:5")
