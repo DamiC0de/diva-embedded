@@ -47,8 +47,10 @@ export class AecService extends EventEmitter {
     }
     await this.createFifos();
     this.process = spawn(EC_BINARY, [
-      AUDIO_INPUT_DEVICE, AUDIO_OUTPUT_DEVICE,
-      EC_INPUT_FIFO, EC_OUTPUT_FIFO,
+      "-i", AUDIO_INPUT_DEVICE,
+      "-o", AUDIO_OUTPUT_DEVICE,
+      "-c", "2",
+      "-s",
     ]);
     this.process.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString().trim();
