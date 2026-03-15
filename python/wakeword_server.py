@@ -280,14 +280,25 @@ def main():
             mic_proc = open_mic(device)
 
             detected = False
+            chunk_count = 0
             while not detected:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
                 if not raw or len(raw) < BYTES_PER_CHUNK:
                     time.sleep(0.01)
                     continue
 
-                audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-                model.predict(audio)
+                chunk_count += 1
+                if chunk_count == 1:
+                    print(f"[Wake] First audio chunk received ({len(raw)} bytes)", flush=True)
+
+                try:
+                    audio = np.frombuffer(raw, dtype=np.int16)
+                    prediction = model.predict(audio)
+                except Exception as e:
+                    print(f"[Wake] predict() error: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    continue
 
                 for model_name, scores in model.prediction_buffer.items():
                     if len(scores) > 0 and scores[-1] > THRESHOLD:
