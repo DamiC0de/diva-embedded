@@ -4,6 +4,7 @@ import { execSync, spawn } from "node:child_process";
 import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeClient } from "./llm/claude.js";
 import { synthesizeToFile } from "./tts/piper.js";
+import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
 import { handleBraveSearch } from "./tools/brave-search.js";
 import {
   handleMemoryRead,
@@ -86,9 +87,24 @@ async function handleAudio(socket: net.Socket, b64Audio: string): Promise<void> 
   // 3. Save to conversation history
   await memory.addMessage("user", transcription);
 
-  // 4. Get LLM response
-  console.log("[Diva] Asking Claude...");
-  const response = await claude.chat(transcription);
+  // 4. Route intent: local or Claude
+  const intent = await classifyIntent(transcription);
+  console.log(`[Diva] Intent: ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
+
+  let response: string;
+  if (intent.intent === "local_simple") {
+    const local = handleLocalIntent(intent.category, transcription);
+    if (local.handled && local.response) {
+      response = local.response;
+      console.log(`[Diva] Local response: "${response}"`);
+    } else {
+      console.log("[Diva] Local handler declined, falling back to Claude...");
+      response = await claude.chat(transcription);
+    }
+  } else {
+    console.log("[Diva] Asking Claude...");
+    response = await claude.chat(transcription);
+  }
   console.log(`[Diva] Response: "${response}"`);
 
   await memory.addMessage("assistant", response);
