@@ -114,14 +114,12 @@ async function main(): Promise<void> {
 
   const server = net.createServer(handleConnection);
 
-  // Kill any OLD process holding port 9001 (from a previous run)
-  // This is safe because Python hasn't been launched yet
-  try {
-    execSync(`fuser -k ${PORT}/tcp 2>/dev/null`, { timeout: 3000 });
-    console.log(`[Diva] Killed old process on port ${PORT}`);
-  } catch {
-    // Nothing on the port, good
-  }
+  // Kill any OLD processes from a previous run
+  // Python hasn't been launched yet so this is safe
+  try { execSync("pkill -9 -f wakeword_server || true", { timeout: 3000 }); } catch {}
+  try { execSync("pkill -9 arecord || true", { timeout: 3000 }); } catch {}
+  try { execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 3000 }); } catch {}
+  console.log("[Diva] Cleaned up old processes");
 
   // Wait for port to fully release
   await new Promise((resolve) => setTimeout(resolve, 2000));
