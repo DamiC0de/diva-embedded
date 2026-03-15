@@ -114,7 +114,17 @@ async function main(): Promise<void> {
 
   const server = net.createServer(handleConnection);
 
-  // Note: don't use fuser -k here, it kills our own child processes
+  // Kill any OLD process holding port 9001 (from a previous run)
+  // This is safe because Python hasn't been launched yet
+  try {
+    execSync(`fuser -k ${PORT}/tcp 2>/dev/null`, { timeout: 3000 });
+    console.log(`[Diva] Killed old process on port ${PORT}`);
+  } catch {
+    // Nothing on the port, good
+  }
+
+  // Wait for port to fully release
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
