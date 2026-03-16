@@ -51,7 +51,7 @@ THRESHOLD = 0.35
 SILENCE_TIMEOUT_S = 1.2
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
-FOLLOW_UP_TIMEOUT_S = 2.0
+FOLLOW_UP_TIMEOUT_S = 0  # DISABLED - causes echo capture without hardware AEC
 _pending_messages = []  # Buffer for messages received during speak_tts
 
 MODEL_NAME = "diva_fr"
