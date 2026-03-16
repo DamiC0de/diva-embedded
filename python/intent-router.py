@@ -77,9 +77,9 @@ INTENT_RULES_ORDERED = [
     # Time / date
     ("time", [
         r"\b(quelle?\s+heure|heure\s+(est|il)|what\s+time)",
-        r"\b(quel\s+jour|quelle?\s+date|date\s+d.aujourd|what\s+day)",
-        r"(la\s+date|l.heure|le\s+jour)\b",
-        r"\b(donne|dis|dire|donner).*(heure|date|jour)",
+        r"\bon\s+est\s+quel\s+jour\b|\bquel\s+jour\s+(sommes|est-on)\b|\bquelle\s+date\s+(sommes|est-on)\b",
+        r"\bla\s+date\s+d.aujourd.hui\b|\bl.heure\s+(s.il|qu.il)\b",
+        r"\b(donne|dis).*l.heure\b",
         r"\b(il\s+est\s+quelle|as.l.heure)",
     ]),
     # Greeting (standalone ONLY)
