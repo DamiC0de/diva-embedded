@@ -22,9 +22,11 @@ mem0_config = {
         }
     },
     "embedder": {
-        "provider": "huggingface",
+        "provider": "openai",
         "config": {
-            "model": "sentence-transformers/all-MiniLM-L6-v2"
+            "model": "all-MiniLM-L6-v2",
+            "api_key": "not-needed",
+            "openai_base_url": "http://localhost:8883/v1"
         }
     },
     "vector_store": {
