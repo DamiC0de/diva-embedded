@@ -1,0 +1,153 @@
+# =============================================================================
+# Configuration d'entraînement — Wake word "diva" (français)
+# =============================================================================
+
+model_name: "diva_fr"
+target_phrase: ["diva"]
+model_type: "dnn"              # 'dnn' (dense) ou 'rnn' (2-layer LSTM)
+layer_size: 64                 # 32 par défaut, 64 recommandé pour mot court (2 syllabes)
+output_dir: "./models/diva_fr"
+
+# --- Génération TTS ---
+tts:
+  # Piper TTS français — 3 voix disponibles
+  piper:
+    voices:
+      - "fr_FR-siwis-medium"
+      - "fr_FR-tom-medium"
+      - "fr_FR-upmc-medium"
+    voices_dir: "./voices"
+    length_scales: [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4]
+    noise_scales: [0.4, 0.667, 0.9]
+    noise_w: 0.8
+    variations_per_combo: 15   # Variations stochastiques par combo voix/vitesse/bruit
+    # → ~945 samples de base (3 voix × 7 vitesses × 3 bruits × 15)
+
+  # eSpeak-ng — complément pour variabilité paramétrique
+  espeak:
+    voices: ["fr", "fr+m1", "fr+m2", "fr+m3", "fr+f1", "fr+f2", "fr+f3", "fr+croak", "fr+whisper"]
+    speeds: [120, 150, 175, 200, 250]
+    pitches: [30, 45, 60, 75]
+    # → ~180 samples
+
+# --- Audio ---
+audio:
+  sample_rate: 16000
+  channels: 1
+  bit_depth: 16
+  clip_duration_sec: 2.0
+  chunk_size: 1280             # 80ms frames (requis par openWakeWord)
+
+# --- Augmentation ---
+augmentation:
+  rounds: 5                    # Chaque sample est augmenté 5x
+  gaussian_noise:
+    min_amplitude: 0.001
+    max_amplitude: 0.015
+    probability: 0.3
+  time_stretch:
+    min_rate: 0.85
+    max_rate: 1.15
+    probability: 0.4
+  pitch_shift:
+    min_semitones: -3
+    max_semitones: 3
+    probability: 0.4
+  gain:
+    min_db: -6
+    max_db: 6
+    probability: 0.3
+  shift:
+    min_shift: -0.2
+    max_shift: 0.2
+    probability: 0.3
+  bandpass_filter:
+    min_center_freq: 200
+    max_center_freq: 4000
+    probability: 0.2
+  lowpass_filter:
+    min_cutoff_freq: 3000
+    max_cutoff_freq: 7500
+    probability: 0.2
+  # Bruit de fond réel (téléchargés par setup_data.sh)
+  background_noise:
+    paths:
+      - "./data/noise/ms-snsd"
+      - "./data/noise/musan"
+    min_snr_db: 3
+    max_snr_db: 30
+    probability: 0.5
+
+# --- Données négatives ---
+negatives:
+  # Features pré-calculées ACAV100M (~2000h parole/bruit/musique)
+  acav100m_features: "./data/features/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+  validation_features: "./data/features/validation_set_features.npy"
+
+  # Négatifs adversariaux — mots phonétiquement proches de "diva"
+  adversarial_phrases:
+    - "divan"
+    - "viva"
+    - "dina"
+    - "vive"
+    - "divers"
+    - "divague"
+    - "dîner"
+    - "dix"
+    - "vida"
+
+  # Négatifs génériques — mots courants clairement différents
+  generic_phrases:
+    - "bonjour"
+    - "merci"
+    - "musique"
+    - "arrête"
+    - "silence"
+    - "lumière"
+    - "allumer"
+    - "éteindre"
+    - "volume"
+    - "météo"
+
+# --- Entraînement ---
+training:
+  steps: 75000                 # Plus que le défaut (50k) pour mot court
+  batch_size: 512
+  learning_rate: 0.001
+  validation_split: 0.1
+  target_accuracy: 0.7
+  target_recall: 0.5
+  target_false_positives_per_hour: 0.1
+  max_negative_weight: 1500
+
+  # Ratio par batch
+  batch_composition:
+    acav100m: 1024
+    adversarial_negative: 75   # Plus de négatifs adversariaux pour mot court
+    positive: 50
+
+  # Enregistrements réels (votre voix)
+  real_recordings:
+    dir: "./recordings"
+    weight: 3                  # Pondération 3x dans le training
+
+# --- Export ---
+export:
+  formats: ["onnx", "tflite"]
+
+# --- Conversion RKNN ---
+rknn:
+  platform: "rk3588"
+  # Approche hybride recommandée :
+  # - melspectrogram : reste en ONNX sur CPU (ops STFT non supportées NPU)
+  # - embedding_model : converti RKNN, NPU Core 0
+  # - classifieur (diva_fr) : converti RKNN, NPU Core 1
+  quantize_embedding: true     # INT8 avec calibration pour l'embedding
+  quantize_classifier: false   # FP16 pour le classifieur (trop petit pour INT8)
+
+# --- Détection (runtime) ---
+detection:
+  threshold: 0.7               # Seuil élevé pour mot court (défaut openWakeWord: 0.5)
+  enable_speex_noise_suppression: true
+  enable_vad: true             # Silero VAD en amont
+  use_custom_verifier: true    # Second filtre par locuteur

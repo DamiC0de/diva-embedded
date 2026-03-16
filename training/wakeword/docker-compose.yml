@@ -1,0 +1,44 @@
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:latest
+    ports:
+      - "8880:8880"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./recordings:/app/recordings
+      - ./scripts:/app/scripts
+      - ./config:/app/config
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      kokoro:
+        condition: service_healthy
+    environment:
+      - KOKORO_URL=http://kokoro:8880
+      - WAKE_WORD=diva
+      - NVIDIA_VISIBLE_DEVICES=all
+    working_dir: /app

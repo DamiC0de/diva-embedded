@@ -1,0 +1,11 @@
+data/
+voices/
+deps/
+models/checkpoints/
+__pycache__/
+*.pyc
+.env
+venv/
+*.egg-info/
+train.log
+nohup.out
