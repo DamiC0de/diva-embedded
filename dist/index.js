@@ -5,7 +5,7 @@ import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeClient } from "./llm/claude.js";
 import { synthesizeToFile } from "./tts/piper.js";
 import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
-import { handleBraveSearch } from "./tools/brave-search.js";
+import { handleWebSearch } from "./tools/searxng-search.js";
 import { handleMemoryRead, handleMemoryWrite, getMemorySummary, getMemoryManager, } from "./tools/memory-tool.js";
 const PORT = 9001;
 const HOST = "127.0.0.1";
@@ -14,7 +14,7 @@ const claude = new ClaudeClient();
 const memory = getMemoryManager();
 async function init() {
     // Register tools
-    claude.registerTool("brave_search", handleBraveSearch);
+    claude.registerTool("brave_search", handleWebSearch);
     claude.registerTool("memory_read", handleMemoryRead);
     claude.registerTool("memory_write", handleMemoryWrite);
     // Load memory
