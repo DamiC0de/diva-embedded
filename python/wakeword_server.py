@@ -51,7 +51,7 @@ THRESHOLD = 0.35
 SILENCE_TIMEOUT_S = 1.2
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
-FOLLOW_UP_TIMEOUT_S = 0  # DISABLED - causes echo capture without hardware AEC
+FOLLOW_UP_TIMEOUT_S = 5.0  # Extended for slower speakers
 _pending_messages = []  # Buffer for messages received during speak_tts
 
 MODEL_NAME = "diva_fr"
@@ -675,7 +675,16 @@ def main():
                         # After barge-in, reset flag (no "Oui?" in follow-up)
                         barged = False
                         print(f"[Wake] Follow-up mode ({FOLLOW_UP_TIMEOUT_S}s)...", flush=True)
-                        close_mic(mic_proc)
+                        close_mic(mic_proc)  # Close mic BEFORE playing sound
+                        # Play notification sound to indicate user can speak
+                        try:
+                            notify_path = os.path.join(os.path.dirname(__file__), "..", "assets", "thinking.wav")
+                            if os.path.exists(notify_path):
+                                print(f"[Wake] Playing follow-up notification...", flush=True)
+                                subprocess.run(["aplay", "-D", "plughw:5", notify_path], timeout=2)
+                                print(f"[Wake] Ready to listen", flush=True)
+                        except Exception as e:
+                            print(f"[Wake] Notification sound error: {e}", flush=True)
                         mic_proc = open_mic(device)
                         # Flush 1s of audio buffer (discard barge-in residual)
                         flush_end = time.time() + 0.8
@@ -741,7 +750,7 @@ def main():
                                 # Play queued sentences
                                 if not barged2:
                                     while True:
-                                        q2 = recv_json_buffered(conn, timeout=30)
+                                        q2 = recv_json_buffered(conn, timeout=5)
                                         if not q2:
                                             break
                                         if q2.get("type") == "speak_queue":
@@ -755,6 +764,7 @@ def main():
                                                             break
                                                     break
                                         elif q2.get("type") == "play_done":
+                                            print("[Wake] Received play_done, going to follow-up", flush=True)
                                             break
                                         else:
                                             break
