@@ -48,10 +48,10 @@ SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
 THRESHOLD = 0.6
-SILENCE_TIMEOUT_S = 1.5
+SILENCE_TIMEOUT_S = 0.4
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
-FOLLOW_UP_TIMEOUT_S = 1.5
+FOLLOW_UP_TIMEOUT_S = 2.0
 _pending_messages = []  # Buffer for messages received during speak_tts
 
 MODEL_NAME = "hey_jarvis_v0.1"
@@ -502,6 +502,10 @@ def main():
             # --- Voice capture phase ---
             # Say "Oui?" instantly (pre-generated WAV)
             close_mic(mic_proc)
+            # Play thinking chime immediately
+            chime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "thinking.wav")
+            if os.path.exists(chime_path):
+                subprocess.run(["aplay", "-D", device, "-q", chime_path], timeout=2)
             oui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "oui.wav")
             subprocess.run(["aplay", "-D", device, "-q", oui_path], timeout=3)
             mic_proc = open_mic(device)

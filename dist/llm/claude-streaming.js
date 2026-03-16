@@ -39,7 +39,7 @@ export class ClaudeStreamingClient {
             const checkResponse = await this.client.messages.create({
                 model: MODEL,
                 max_tokens: 1024,
-                system: buildSystemPrompt(this.memorySummary),
+                system: [{ type: "text", text: buildSystemPrompt(this.memorySummary), cache_control: { type: "ephemeral" } }],
                 messages,
                 tools: toolDefinitions,
             });
@@ -80,7 +80,7 @@ export class ClaudeStreamingClient {
             const stream = this.client.messages.stream({
                 model: MODEL,
                 max_tokens: 1024,
-                system: buildSystemPrompt(this.memorySummary),
+                system: [{ type: "text", text: buildSystemPrompt(this.memorySummary), cache_control: { type: "ephemeral" } }],
                 messages,
             });
             for await (const event of stream) {
