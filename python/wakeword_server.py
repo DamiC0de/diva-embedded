@@ -526,6 +526,7 @@ def main():
             last_voice_time = time.time()
             start_time = time.time()
             got_any_speech = False
+            no_speech_timeout = False
 
             while True:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
@@ -547,6 +548,7 @@ def main():
                     break
                 if not got_any_speech and elapsed > 3.0:
                     print(f"[Wake] No speech detected after 3s, giving up", flush=True)
+                    no_speech_timeout = True
                     break
                 if elapsed > MAX_RECORD_S:
                     print(f"[Wake] Max recording time reached ({MAX_RECORD_S}s)", flush=True)
@@ -563,6 +565,10 @@ def main():
 
             if duration_s < 0.3:
                 print("[Wake] Audio too short, ignoring", flush=True)
+                continue
+
+            if no_speech_timeout:
+                print("[Wake] No speech was detected, skipping transcription", flush=True)
                 continue
 
             # Convert to WAV and send to Node.js
