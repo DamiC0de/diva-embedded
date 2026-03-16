@@ -38,7 +38,7 @@ INTENT_RULES_ORDERED = [
     ("home_control", [
         r"\b(allume|[eé]teins?|lumi[eè]re|lampe|light|turn\s+(on|off)|switch)",
         r"\b(thermostat|chauffage|clim|climatisation|ventil)",
-        r"\b(porte|garage|volet|store|rideau|ferme|ouvre|verrouill)",
+        r"\b(porte|garage|volet|store|rideau|ouvre|verrouill)",
         r"\b(aspirateur|robot|machine|lave)",
     ]),
     # Timer / alarm
@@ -94,7 +94,7 @@ INTENT_RULES_ORDERED = [
     ]),
     # Shutdown
     ("shutdown", [
-        r"\b(ta\s+gueule|tais[- ]toi|ferme[- ]la|shut\s+up|silence|arr[eê]te)\b",
+        r"\b(ta\s+gueule|tais[- ]toi|ferme|ferme[- ]la|ferme[- ]ta|shut\s+up|silence|arr[eê]te)\b",
     ]),
 ]
 
