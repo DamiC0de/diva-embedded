@@ -22,6 +22,11 @@ QWEN_URL = os.environ.get("QWEN_URL", "http://localhost:8080")
 # ============================================================
 
 INTENT_RULES_ORDERED = [
+    # Speaker registration (FIRST - before instruction captures "enregistre")
+    ("speaker_register", [
+        r"(enregistre|apprends?)\s+(ma\s+voix|qui\s+je\s+suis)",
+        r"m[eé]morise\s+ma\s+voix",
+    ]),
     # Instructions/mémoire → toujours Claude
     ("instruction", [
         r"(enregistre|memorise|retiens|note|rappelle-toi|souviens|sauvegarde)",
@@ -88,10 +93,7 @@ INTENT_RULES_ORDERED = [
         r"^(wesh|ciao|ola)[\s,!.]*$",
     ]),
     # Goodbye
-    ("goodbye", [
-        r"\b(au\s+revoir|bye|bonne?\s+nuit|good\s*night|adieu)\b",
-        r"^(bonne\s+soir[eé]e|[aà]\s+demain|[aà]\s+bient[oô]t|[aà]\s+plus)[\s,!.]*$",
-    ]),
+    ("goodbye", [        r"\b(au\s+revoir|bye|bonne?\s+nuit|adieu|ciao|tchao)\b",        r"\b([aà]\s+plus|[aà]\s+bient[oô]t|[aà]\s+demain|bonne\s+soir[eé]e)\b",        r"\b(c.est\s+(bon|fini|tout|termin[eé])|j.(en\s+)?ai\s+fini|on\s+arr[eê]te)\b",        r"\bmerci.{0,15}([aà]\s+plus|[aà]\s+bient[oô]t)\b",    ]),
     # Shutdown
     ("shutdown", [
         r"\b(ta\s+gueule|tais[- ]toi|ferme|ferme[- ]la|ferme[- ]ta|shut\s+up|silence|arr[eê]te)\b",
@@ -104,7 +106,7 @@ for intent_name, patterns in INTENT_RULES_ORDERED:
     COMPILED_RULES.append((intent_name, compiled))
 
 # Intent → routing type
-LOCAL_CATS = {"time", "timer", "calculator", "greeting", "goodbye", "identity", "baby", "shutdown"}
+LOCAL_CATS = {"speaker_register", "time", "timer", "calculator", "greeting", "goodbye", "identity", "baby", "shutdown"}
 QWEN_CATS = {"conversational"}
 HA_CATS = {"home_control", "music"}
 CLAUDE_CATS = {"weather", "news", "instruction", "complex"}
@@ -113,9 +115,13 @@ CLAUDE_CATS = {"weather", "news", "instruction", "complex"}
 def classify_keywords(text):
     """Pass 1: Regex keywords. Returns (category, confidence) or (None, 0)."""
     text_clean = text.strip()
-    # Memory/instruction bypass
+    # Speaker registration check FIRST
+    if re.search(r"(enregistre|apprends?)\s+(ma\s+voix|qui\s+je\s+suis)", text_clean, re.IGNORECASE):
+        return "speaker_register", 0.95
+    # Memory/instruction bypass (but not voice registration)
     if re.search(r"(enregistre|memorise|retiens|note|rappelle-toi|souviens|sauvegarde|il faut que tu|je vais te donner|je te donne)", text_clean, re.IGNORECASE):
-        return "instruction", 0.95
+        if not re.search(r"ma\s+voix", text_clean, re.IGNORECASE):
+            return "instruction", 0.95
     for category, patterns in COMPILED_RULES:
         for pattern in patterns:
             if pattern.search(text_clean):
@@ -131,8 +137,9 @@ def classify_keywords(text):
 QWEN_CLASSIFY_PROMPT = """Tu es un classifieur d'intent. Classe cette phrase en UNE seule catégorie.
 
 Catégories possibles:
+- goodbye: fin de conversation, au revoir, salut, ciao, à plus, j'ai fini, c'est bon, merci c'est tout
 - conversational: salutations avec question (comment vas-tu, ça va, quoi de neuf)
-- time: demande d'heure ou de date
+- time: demande d'heure actuelle ou de date actuelle (quelle heure, quel jour)
 - weather: demande de météo
 - home_control: contrôle maison (lumière, chauffage, porte)
 - timer: minuteur, alarme, rappel
@@ -142,11 +149,15 @@ Catégories possibles:
 - complex: tout le reste (questions, raisonnement, recherche)
 
 Exemples:
+- "j'en ai fini merci" → goodbye
+- "salut à plus" → goodbye
+- "c'est bon merci" → goodbye
 - "comment vas-tu ce matin" → conversational
 - "raconte-moi une blague" → complex
 - "tu connais Besançon" → complex
+- "quel âge a X" → complex
+- "donne-moi l'âge de X" → complex
 - "bonjour, donne-moi la date" → time
-- "c'est quoi le programme ce soir" → complex
 
 Réponds UNIQUEMENT avec le nom de la catégorie, rien d'autre.
 
@@ -179,7 +190,7 @@ def classify_qwen(text):
         category = category.split()[0].strip(".,!?:;\"'")
 
         # Validate it's a known category
-        valid = {"conversational", "time", "weather", "home_control", "timer",
+        valid = {"goodbye", "conversational", "time", "weather", "home_control", "timer",
                  "calculator", "identity", "news", "complex", "greeting", "goodbye"}
         if category not in valid:
             category = "complex"
