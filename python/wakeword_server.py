@@ -267,6 +267,9 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
     if not text:
         return False
     print(f"[Wake] Speaking: {text[:60]}...", flush=True)
+    # Detect goodbye responses to end conversation
+    goodbye_phrases = ["bonne nuit", "à bientôt", "à plus", "au revoir", "salut", "ciao", "bye"]
+    is_goodbye = any(phrase in text.lower() for phrase in goodbye_phrases)
     try:
         # Use Piper HTTP server (model already in memory = fast)
         req = urllib.request.Request(
@@ -331,6 +334,9 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
         
         play_proc.wait(timeout=30)
         print("[Wake] Speaking done", flush=True)
+        if is_goodbye:
+            print("[Wake] Goodbye phrase detected — will end conversation", flush=True)
+            return "GOODBYE"
         return False
     except Exception as e:
         print(f"[Wake] speak_tts error: {e}", flush=True)
@@ -879,6 +885,8 @@ def main():
                 continue
             if response and response.get("type") == "speak":
                 text = response.get("text", "")
+                end_conversation = response.get("end", False)
+                print(f"[Wake] Got speak: end={end_conversation}", flush=True)
                 if text:
                     SHUTDOWN_KEYWORDS = ["ta gueule", "tais-toi", "ferme"]
                     
@@ -909,6 +917,16 @@ def main():
                             else:
                                 break
                     
+                    # Check end flag from initial speak message (goodbye/shutdown)
+                    if end_conversation:
+                        print("[Wake] End conversation (goodbye) — back to wake word", flush=True)
+                        try:
+                            goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                            if os.path.exists(goodbye_path):
+                                subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except: pass
+                        continue  # Back to wake word
+
                     # Check if we got shutdown signal
                     if not got_shutdown:
                         next_msg = recv_json_buffered(conn, timeout=0.5)
@@ -934,6 +952,16 @@ def main():
                                 subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         except: pass
                         continue
+                    
+                    # Check if conversation should end (goodbye/shutdown)
+                    if end_conversation:
+                        print("[Wake] End conversation flag — back to wake word", flush=True)
+                        try:
+                            goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                            if os.path.exists(goodbye_path):
+                                subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except: pass
+                        continue  # Back to main wake word loop
                     
                     # Conversation loop — keep listening after each response
                     while True:
@@ -1025,8 +1053,28 @@ def main():
                             break
                         if resp2 and resp2.get("type") == "speak":
                             text2 = resp2.get("text", "")
+                            end_convo2 = resp2.get("end", False)
+                            print(f"[Wake] Follow-up speak: end={end_convo2}", flush=True)
                             if text2:
                                 barged2 = speak_tts(text2, device, oww_model=model, conn=conn)
+                                # Check if this was a goodbye
+                                if barged2 == "GOODBYE":
+                                    print("[Wake] Goodbye spoken — back to wake word", flush=True)
+                                    try:
+                                        goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                                        if os.path.exists(goodbye_path):
+                                            subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    except: pass
+                                    break
+                                # Check if conversation should end
+                                if end_convo2:
+                                    print("[Wake] End flag in follow-up — back to wake word", flush=True)
+                                    try:
+                                        goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                                        if os.path.exists(goodbye_path):
+                                            subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    except: pass
+                                    break  # Exit follow-up loop
                                 # Play queued sentences
                                 if not barged2:
                                     while True:

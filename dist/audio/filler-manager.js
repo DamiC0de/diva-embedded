@@ -37,7 +37,7 @@ export function getRandomFiller(category) {
 
 function isNightMode() {
     const hour = new Date().getHours();
-    return hour >= 22 || hour < 6;
+    return false; // Night mode disabled
 }
 
 export function chooseFiller(intent, text) {

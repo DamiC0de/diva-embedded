@@ -207,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                         best_name = name
                 
                 # Threshold
-                if best_score < 0.5:
+                if best_score < 0.3:
                     best_name = "unknown"
                 
                 self._respond(200, {"speaker": best_name, "confidence": round(best_score, 3)})
