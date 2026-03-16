@@ -27,6 +27,55 @@ import urllib.request
 
 import numpy as np
 
+# --- Groq Transcription for Speaker Registration ---
+def transcribe_audio(audio_bytes):
+    """Transcribe audio using Groq Whisper API."""
+    import requests
+    
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    if not GROQ_API_KEY:
+        env_path = "/opt/diva-embedded/.env"
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    if line.startswith("GROQ_API_KEY="):
+                        GROQ_API_KEY = line.strip().split("=", 1)[1].strip('"').strip("'")
+                        break
+    
+    if not GROQ_API_KEY:
+        print("[Transcribe] No GROQ_API_KEY", flush=True)
+        return None
+    
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(audio_bytes)
+        tmp_path = f.name
+    
+    try:
+        with open(tmp_path, "rb") as audio_file:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                files={"file": ("audio.wav", audio_file, "audio/wav")},
+                data={"model": "whisper-large-v3", "language": "fr"},
+                timeout=30
+            )
+        
+        if response.ok:
+            text = response.json().get("text", "").strip()
+            print(f"[Transcribe] {text}", flush=True)
+            return text
+        else:
+            print(f"[Transcribe] Error: {response.status_code}", flush=True)
+            return None
+    except Exception as e:
+        print(f"[Transcribe] {e}", flush=True)
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+
 # --- Silero VAD ---
 try:
     import torch
@@ -174,6 +223,38 @@ def close_mic(proc: subprocess.Popen | None):
     # Ensure ALSA device is released
     time.sleep(0.5)
     print("[Wake] Mic closed", flush=True)
+
+def play_filler_audio(path: str, mic_proc):
+    """Play a pre-cached filler WAV file.
+    
+    Called by Node.js via type: play_filler message.
+    Closes mic if open, plays WAV, does NOT reopen mic (Node.js handles that).
+    """
+    print(f"[Wake] Playing filler: {path}", flush=True)
+    
+    # Close mic if open to avoid ALSA conflicts
+    if mic_proc is not None:
+        close_mic(mic_proc)
+    
+    if not os.path.exists(path):
+        print(f"[Wake] Filler not found: {path}", flush=True)
+        return None
+    
+    try:
+        subprocess.run(
+            ["aplay", "-D", "plughw:5", path],
+            timeout=10,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print("[Wake] Filler playback done", flush=True)
+    except subprocess.TimeoutExpired:
+        print("[Wake] Filler playback timeout", flush=True)
+    except Exception as e:
+        print(f"[Wake] Filler playback error: {e}", flush=True)
+    
+    return None  # Mic is closed, return None so caller knows
+
 
 
 def strip_emojis(text):
@@ -408,6 +489,152 @@ def recv_json(sock: socket.socket, timeout: float = 30.0) -> dict | None:
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+# === SPEAKER REGISTRATION FLOW ===
+REGISTRATION_PHRASES = [
+    "Bonjour Diva, comment ça va ?",
+    "Diva, quelle heure est-il ?",
+    "Dis-moi la météo de demain",
+]
+
+def handle_speaker_registration(conn, device, model):
+    """Interactive flow to register a new speaker voice."""
+    import requests
+    import base64
+    import tempfile
+    
+    MEM0_URL = "http://localhost:9002"
+    BEEP_PATH = "/opt/diva-embedded/assets/thinking.wav"  # Sound to indicate "speak now"
+    
+    def play_beep():
+        """Play a beep to indicate user should speak."""
+        try:
+            subprocess.run(['aplay', '-D', device, BEEP_PATH], capture_output=True, timeout=3)
+        except:
+            pass
+    
+    print("[Register] Starting speaker registration flow", flush=True)
+    
+    # Step 1: Ask for name
+    speak_tts("D'accord ! Comment tu t'appelles ?", device)
+    play_beep()  # Signal to speak
+    
+    # Record response
+    print("[Register] Recording name...", flush=True)
+    audio_data = record_audio_chunk(device, duration=3.0)
+    if not audio_data:
+        speak_tts("Je n'ai pas entendu. On réessaie plus tard.", device)
+        return None
+    
+    # Transcribe to get name
+    print(f"[Register] Got {len(audio_data) if audio_data else 0} bytes of audio", flush=True)
+    transcript = transcribe_audio(audio_data)
+    print(f"[Register] Transcribed name: {transcript}", flush=True)
+    if not transcript:
+        speak_tts("Je n'ai pas compris. Réessayons plus tard.", device)
+        return None
+    
+    # Extract name from transcript
+    import re
+    name_match = re.search(r"(?:je (?:m'appelle|suis)|c'est|moi c'est)\s+(\w+)", transcript.lower())
+    if name_match:
+        speaker_name = name_match.group(1).capitalize()
+    else:
+        # Use first word as name
+        words = transcript.strip().split()
+        speaker_name = words[0].capitalize() if words else "Inconnu"
+    
+    speak_tts(f"OK {speaker_name} ! Je vais te demander de répéter quelques phrases pour apprendre ta voix.", device)
+    time.sleep(0.5)
+    
+    # Step 2: Collect samples
+    samples = []
+    for i, phrase in enumerate(REGISTRATION_PHRASES):
+        speak_tts(f"Répète : {phrase}", device)
+        play_beep()  # Signal to speak
+        print(f"[Register] Recording phrase {i+1}/{len(REGISTRATION_PHRASES)}...", flush=True)
+        
+        # Record sample (longer for full phrase)
+        audio_data = record_audio_chunk(device, duration=4.0)
+        print(f"[Register] Got {len(audio_data) if audio_data else 0} bytes", flush=True)
+        if audio_data:
+            samples.append(audio_data)
+            if i < len(REGISTRATION_PHRASES) - 1:
+                speak_tts("Parfait !", device)
+        else:
+            speak_tts("Je n'ai pas entendu, on continue.", device)
+    
+    if len(samples) < 2:
+        speak_tts("Pas assez d'échantillons. Réessayons plus tard.", device)
+        return None
+    
+    # Step 3: Register with WeSpeaker
+    speak_tts("Je traite tes échantillons...", device)
+    
+    print(f"[Register] Processing {len(samples)} samples for {speaker_name}", flush=True)
+    success = False
+    for idx, sample in enumerate(samples):
+        try:
+            print(f"[Register] Sending sample {idx+1} ({len(sample)} bytes)...", flush=True)
+            # sample is already WAV data from arecord, encode directly
+            audio_b64 = base64.b64encode(sample).decode()
+            
+            # Register
+            print(f"[Register] Calling API for {speaker_name.lower()}...", flush=True)
+            resp = requests.post(f"{MEM0_URL}/speaker/register", json={
+                "name": speaker_name.lower(),
+                "audio": audio_b64
+            }, timeout=30)
+            
+            print(f"[Register] API response: {resp.status_code}", flush=True)
+            if resp.ok:
+                print(f"[Register] Success! {resp.text}", flush=True)
+                success = True
+                break
+            else:
+                print(f"[Register] API error: {resp.text}", flush=True)
+        except Exception as e:
+            print(f"[Register] Exception: {e}", flush=True)
+    
+    if success:
+        speak_tts(f"C'est bon {speaker_name} ! Je te reconnaîtrai maintenant.", device)
+        return speaker_name
+    else:
+        speak_tts("Il y a eu un problème. Réessayons plus tard.", device)
+        return None
+
+def record_audio_chunk(device, duration=3.0):
+    """Record a short audio chunk for registration."""
+    import subprocess
+    import tempfile
+    
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        tmp_path = f.name
+    
+    try:
+        subprocess.run([
+            'arecord', '-D', device, '-f', 'S16_LE', '-r', '16000', '-c', '1',
+            '-d', str(int(duration)), tmp_path
+        ], capture_output=True, timeout=duration + 2)
+        
+        with open(tmp_path, 'rb') as f:
+            return f.read()
+    except Exception as e:
+        print(f"[Record] Error: {e}")
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+def write_wav(path, pcm_data):
+    """Write PCM data to WAV file."""
+    import wave
+    with wave.open(path, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(pcm_data)
+
+
 def main():
     # Step 1: Detect hardware
     device = detect_respeaker_card()
@@ -631,11 +858,24 @@ def main():
             # Wait for filler to finish before playing response
             # filler_thread.join(timeout=5)
 
-            # Skip filler messages (sent by Node for iOS, not needed here)
-            while response and response.get("type") in ("play_filler", "keyword_not_detected", "keyword_detected"):
+            # Handle filler playback requests from Node.js
+            while response and response.get("type") == "play_filler":
+                filler_path = response.get("path", "")
+                if filler_path:
+                    mic_proc = play_filler_audio(filler_path, mic_proc)
+                response = recv_json(conn, timeout=60)
+            # Skip keyword detection messages (handled elsewhere)
+            while response and response.get("type") in ("keyword_not_detected", "keyword_detected"):
                 response = recv_json(conn, timeout=60)
             if response and response.get("type") == "shutdown":
                 print("[Wake] Shutdown command — back to wake word", flush=True)
+                continue
+            if response and response.get("type") == "speaker_register":
+                print("[Wake] Speaker registration flow starting...", flush=True)
+                try:
+                    handle_speaker_registration(conn, device, model)
+                except Exception as e:
+                    print(f"[Wake] Speaker registration error: {e}", flush=True)
                 continue
             if response and response.get("type") == "speak":
                 text = response.get("text", "")
@@ -770,6 +1010,9 @@ def main():
                         # filler_thread.join(timeout=5)
                         
                         while resp2 and resp2.get("type") == "play_filler":
+                            filler_path = resp2.get("path", "")
+                            if filler_path:
+                                mic_proc = play_filler_audio(filler_path, mic_proc)
                             resp2 = recv_json(conn, timeout=15)
                         if resp2 and resp2.get("type") == "shutdown":
                             print("[Wake] Shutdown command — ending conversation", flush=True)
@@ -839,4 +1082,7 @@ def main():
 
 
 if __name__ == "__main__":
+    main()
+
+
     main()

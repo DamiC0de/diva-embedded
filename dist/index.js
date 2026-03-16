@@ -5,12 +5,14 @@ import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeStreamingClient } from "./llm/claude-streaming.js";
 import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
 import { handleWebSearch } from "./tools/searxng-search.js";
-import { handleMemoryRead, handleMemoryWrite, getMemorySummary, getMemoryManager, } from "./tools/memory-tool.js";
+import { chooseFiller, loadFillers } from "./audio/filler-manager.js";
+import { handleMemoryRead, handleMemoryWrite, getMemorySummary, addConversation, identifySpeaker, getCurrentUser } from "./tools/memory-tool.js";
 const PORT = 9001;
 const HOST = "127.0.0.1";
 const claude = new ClaudeStreamingClient();
-const memory = getMemoryManager();
+// Memory now uses Mem0 service on port 9002
 async function init() {
+    loadFillers();
     claude.registerTool("brave_search", handleWebSearch);
     claude.registerTool("memory_read", handleMemoryRead);
     claude.registerTool("memory_write", handleMemoryWrite);
@@ -52,6 +54,11 @@ function handleConnection(socket) {
 async function handleAudio(socket, b64Audio) {
     const wavBuffer = Buffer.from(b64Audio, "base64");
     console.log(`[Diva] Received audio: ${wavBuffer.length} bytes`);
+    
+    // Identify speaker from audio
+    const speakerId = await identifySpeaker(b64Audio);
+    console.log(`[Diva] Speaker: ${speakerId || "unknown"}`);
+    
     console.log("[Diva] Transcribing...");
     const transcription = await transcribeLocal(wavBuffer);
     console.log(`[Diva] Transcription: "${transcription}"`);
@@ -59,7 +66,7 @@ async function handleAudio(socket, b64Audio) {
         sendJson(socket, { type: "error", message: "empty transcription" });
         return;
     }
-    await memory.addMessage("user", transcription);
+    // User message tracked after response
     // Route intent
     const intent = await classifyIntent(transcription);
     console.log(`[Diva] Intent: ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
@@ -67,10 +74,18 @@ async function handleAudio(socket, b64Audio) {
         const local = await handleLocalIntent(intent.category, transcription);
         if (local.handled && local.response) {
             console.log(`[Diva] Local response: "${local.response}"`);
-            await memory.addMessage("assistant", local.response);
+            
+            // Special handling for speaker_register - don't speak, just signal
+            if (intent.category === "speaker_register") {
+                console.log("[Diva] Starting speaker registration flow...");
+                sendJson(socket, { type: "speaker_register" });
+                return;
+            }
+            
+            await addConversation(transcription, local.response);
             // Single sentence — send directly as speak
             sendJson(socket, { type: "speak", text: local.response });
-            // Send shutdown signal if it was a shutdown command
+            // Send special signals for certain categories
             if (intent.category === "shutdown") {
                 sendJson(socket, { type: "shutdown" });
             } else {
@@ -80,6 +95,39 @@ async function handleAudio(socket, b64Audio) {
         }
         console.log("[Diva] Local handler declined, falling back to Claude...");
     }
+    // Choose and play contextual filler before Claude
+    const fillers = chooseFiller(intent.category, transcription);
+    if (fillers.primary) {
+        console.log("[Diva] Playing filler: " + fillers.primary.split("/").pop());
+        sendJson(socket, { type: "play_filler", path: fillers.primary });
+    }
+    
+    // Get current speaker and their memories
+    const currentSpeaker = getCurrentUser();
+    console.log(`[Diva] Current user: ${currentSpeaker}`);
+    
+    // Get memories for this specific user
+    const speakerMemories = await getMemorySummary();
+    
+    // Build speaker context for Claude
+    let speakerContext = "";
+    if (currentSpeaker === "default" || currentSpeaker === "unknown") {
+        speakerContext = "Tu ne sais pas qui te parle actuellement. La voix n'a pas été reconnue. Tu peux demander à la personne de se présenter ou de s'enregistrer avec 'enregistre ma voix'.";
+    } else {
+        speakerContext = `Tu parles actuellement à ${currentSpeaker}.`;
+        if (speakerMemories && speakerMemories.trim()) {
+            speakerContext += `
+
+Ce que tu sais sur ${currentSpeaker}:
+${speakerMemories}`;
+        } else {
+            speakerContext += `
+Tu n'as pas encore de souvenirs sur cette personne.`;
+        }
+    }
+    claude.setMemorySummary(speakerContext);
+    console.log(`[Diva] Context: ${speakerContext.substring(0, 100)}...`);
+    
     // Streaming Claude response — TTS each sentence as it arrives
     console.log("[Diva] Asking Claude (streaming)...");
     let isFirstSent = false;
@@ -102,7 +150,7 @@ async function handleAudio(socket, b64Audio) {
         // fallback sent
     }
     console.log(`[Diva] Full response: "${fullResponse}"`);
-    await memory.addMessage("assistant", fullResponse);
+    await addConversation(transcription, fullResponse);
     // Signal end of response
     sendJson(socket, { type: "play_done" });
 }

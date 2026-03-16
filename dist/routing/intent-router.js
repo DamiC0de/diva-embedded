@@ -133,6 +133,10 @@ export async function handleLocalIntent(category, text) {
             }
             return { handled: false }; // fallback to Claude
         }
+        case "speaker_register": {
+            // Signal to Python to start the registration flow
+            return { handled: true, response: "__SPEAKER_REGISTER__", special: "speaker_register" };
+        }
         case "shutdown": {
             const replies = ["OK, je me tais.", "D'accord, silence.", "Compris."];
             return { handled: true, response: replies[Math.floor(Math.random() * replies.length)] };

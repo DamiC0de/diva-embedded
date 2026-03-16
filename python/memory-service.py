@@ -46,19 +46,47 @@ except Exception as e:
     print(f"[Mem0] Init failed: {e}, using fallback")
     memory = None
 
-# --- WeSpeaker Setup ---
+# --- WeSpeaker Setup (ONNX direct, no torchcodec) ---
 print("[WeSpeaker] Initializing...")
+SPEAKERS_DIR = "/opt/diva-embedded/data/speakers"
+os.makedirs(SPEAKERS_DIR, exist_ok=True)
+
 try:
-    import wespeakerruntime as wespeaker
-    speaker_model = wespeaker.Speaker(lang='en')
-    SPEAKERS_DIR = "/opt/diva-embedded/data/speakers"
-    os.makedirs(SPEAKERS_DIR, exist_ok=True)
+    import numpy as np
+    import soundfile as sf
+    import torch
+    import torchaudio
+    import onnxruntime as ort
+    
+    WESPEAKER_MODEL = "/root/.wespeaker/en/model.onnx"
+    ort_session = ort.InferenceSession(WESPEAKER_MODEL, providers=['CPUExecutionProvider'])
+    ort_input_name = ort_session.get_inputs()[0].name
+    
+    def extract_embedding_onnx(wav_path):
+        """Extract speaker embedding using ONNX model directly."""
+        audio, sr = sf.read(wav_path)
+        waveform = torch.from_numpy(audio).float()
+        if waveform.dim() == 1:
+            waveform = waveform.unsqueeze(0)
+        else:
+            waveform = waveform.T
+        if sr != 16000:
+            waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        fbank = torchaudio.compliance.kaldi.fbank(
+            waveform, num_mel_bins=80, sample_frequency=16000, dither=0
+        ).numpy()
+        fbank = np.expand_dims(fbank, axis=0).astype(np.float32)
+        embedding = ort_session.run(None, {ort_input_name: fbank})[0]
+        return embedding.squeeze()
+    
+    speaker_model = True  # Flag that model is ready
     
     # Load registered speakers
     registered_speakers = {}
     for f in os.listdir(SPEAKERS_DIR):
         if f.endswith('.npy'):
-            import numpy as np
             name = f.replace('.npy', '')
             embedding = np.load(os.path.join(SPEAKERS_DIR, f))
             registered_speakers[name] = embedding
@@ -68,6 +96,7 @@ except Exception as e:
     print(f"[WeSpeaker] Init failed: {e}")
     speaker_model = None
     registered_speakers = {}
+    extract_embedding_onnx = None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -161,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
                     tmp_path = f.name
                 
                 # Extract embedding
-                embedding = speaker_model.extract_embedding(tmp_path)
+                embedding = extract_embedding_onnx(tmp_path)
                 os.unlink(tmp_path)
                 
                 if not registered_speakers:
@@ -205,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
                     f.write(audio_bytes)
                     tmp_path = f.name
                 
-                embedding = speaker_model.extract_embedding(tmp_path)
+                embedding = extract_embedding_onnx(tmp_path)
                 os.unlink(tmp_path)
                 
                 # Save embedding
