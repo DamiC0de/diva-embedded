@@ -200,7 +200,7 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
             f.write(wav_data)
         env = dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native")
         play_proc = subprocess.Popen(
-            ["paplay", "--device=aec_sink", tmp_wav],
+            ["aplay", "-D", "plughw:5", tmp_wav],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
         )
         piper_proc = None  # No piper process to manage
@@ -312,7 +312,7 @@ def play_wav(path: str, device: str, oww_model=None, conn=None):
     print(f"[Wake] Playing {path}...", flush=True)
     try:
         play_proc = subprocess.Popen(
-            ["paplay", "--device=aec_sink", path],
+            ["aplay", "-D", "plughw:5", path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         
@@ -517,9 +517,9 @@ def main():
             # Play thinking chime immediately
             chime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "thinking.wav")
             if os.path.exists(chime_path):
-                subprocess.run(["paplay", "--device=aec_sink", chime_path], timeout=2, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
+                subprocess.run(["aplay", "-D", "plughw:5", chime_path], timeout=2, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             oui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "oui.wav")
-            subprocess.run(["paplay", "--device=aec_sink", oui_path], timeout=3, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
+            subprocess.run(["aplay", "-D", "plughw:5", oui_path], timeout=3, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             mic_proc = open_mic(device)
             print("[Wake] Recording voice...", flush=True)
             chunks = []
