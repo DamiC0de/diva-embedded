@@ -205,8 +205,9 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
         )
         piper_proc = None  # No piper process to manage
         
-        # Monitor for keyword barge-in during playback
-        if conn:
+        # Barge-in monitoring DISABLED — causes echo capture
+        # Re-enable when hardware AEC (ReSpeaker XVF3800) is available
+        if False and conn:
             mic_listen = subprocess.Popen(
                 ["arecord", "-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
