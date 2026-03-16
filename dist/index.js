@@ -89,6 +89,13 @@ async function handleAudio(socket, b64Audio) {
             sendJson(socket, { type: "speak_queue", text: sentence });
         }
     });
+    // Fallback if streaming produced nothing
+    if (!fullResponse || fullResponse.trim().length === 0) {
+        const fallback = "Desole, je n ai pas pu repondre.";
+        console.warn("[Diva] Empty streaming response, using fallback");
+        sendJson(socket, { type: "speak", text: fallback });
+        // fallback sent
+    }
     console.log(`[Diva] Full response: "${fullResponse}"`);
     await memory.addMessage("assistant", fullResponse);
     // Signal end of response
@@ -133,7 +140,7 @@ async function main() {
     server.listen(PORT, HOST, () => {
         console.log(`[Diva] TCP server listening on ${HOST}:${PORT}`);
         console.log("[Diva] Starting Python wakeword process...");
-        const pythonProc = spawn("python3", ["python/wakeword_server.py"], {
+        const pythonProc = spawn("/opt/npu-env/bin/python", ["python/wakeword_server.py"], {
             stdio: ["ignore", "inherit", "inherit"],
             cwd: process.cwd(),
         });

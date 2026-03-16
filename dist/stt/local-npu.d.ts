@@ -1,7 +1,7 @@
 /**
- * Local STT via NPU SenseVoice server on Rock 5B+
- * OpenAI-compatible API on port 8881
- * Falls back to Groq Whisper if local fails
+ * STT — Groq Whisper with anti-hallucination filtering
+ * Uses verbose_json format for segment-level metrics
+ * Filters out hallucinated segments (high no_speech_prob, repetitions, etc.)
  */
 export declare function transcribeLocal(wavBuffer: Buffer): Promise<string>;
 //# sourceMappingURL=local-npu.d.ts.map

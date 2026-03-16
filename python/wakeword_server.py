@@ -47,14 +47,14 @@ PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
-THRESHOLD = 0.6
-SILENCE_TIMEOUT_S = 0.4
+THRESHOLD = 0.35
+SILENCE_TIMEOUT_S = 1.2
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
 FOLLOW_UP_TIMEOUT_S = 2.0
 _pending_messages = []  # Buffer for messages received during speak_tts
 
-MODEL_NAME = "hey_jarvis_v0.1"
+MODEL_NAME = "diva_fr"
 MODEL_FILE = f"{MODEL_NAME}.onnx"
 MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{MODEL_FILE}"
 
@@ -133,7 +133,7 @@ def ensure_model() -> str:
 # Audio helpers
 # ---------------------------------------------------------------------------
 def open_mic(device: str) -> subprocess.Popen:
-    """Open microphone via arecord with retry on busy device."""
+    """Open microphone via parecord (PulseAudio AEC) with retry."""
     for attempt in range(3):
         try:
             proc = subprocess.Popen(
@@ -176,8 +176,15 @@ def close_mic(proc: subprocess.Popen | None):
     print("[Wake] Mic closed", flush=True)
 
 
+def strip_emojis(text):
+    import re
+    return re.sub(r'[😀-🙏🌀-🗿🚀-🛿🇠-🇿✂-➰🤦-🤷☀-⭕️]+', '', text).strip()
+
 def speak_tts(text: str, device: str, oww_model=None, conn=None):
     """TTS via Piper HTTP server (model stays loaded) + aplay. Returns keyword or False."""
+    text = strip_emojis(text)
+    if not text:
+        return False
     print(f"[Wake] Speaking: {text[:60]}...", flush=True)
     try:
         # Use Piper HTTP server (model already in memory = fast)
@@ -191,14 +198,16 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
         tmp_wav = "/tmp/diva_speak.wav"
         with open(tmp_wav, "wb") as f:
             f.write(wav_data)
+        env = dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native")
         play_proc = subprocess.Popen(
-            ["aplay", "-D", device, "-q", tmp_wav],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["paplay", "--device=aec_sink", tmp_wav],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
         )
         piper_proc = None  # No piper process to manage
         
-        # Monitor for keyword barge-in during playback
-        if conn:
+        # Barge-in monitoring DISABLED — causes echo capture
+        # Re-enable when hardware AEC (ReSpeaker XVF3800) is available
+        if False and conn:
             mic_listen = subprocess.Popen(
                 ["arecord", "-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw", "-q"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
@@ -303,7 +312,7 @@ def play_wav(path: str, device: str, oww_model=None, conn=None):
     print(f"[Wake] Playing {path}...", flush=True)
     try:
         play_proc = subprocess.Popen(
-            ["aplay", "-D", device, path],
+            ["paplay", "--device=aec_sink", path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         
@@ -471,6 +480,7 @@ def main():
 
             detected = False
             chunk_count = 0
+            wake_listen_start = time.time()
             while not detected:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
                 if not raw or len(raw) < BYTES_PER_CHUNK:
@@ -493,6 +503,8 @@ def main():
                 # Use raw prediction scores (prediction_buffer saturates with custom models)
                 for model_name in prediction:
                     raw_score = prediction[model_name]
+                    if raw_score > 0.01:
+                        print(f"[Wake] Score: {raw_score:.3f} (threshold={THRESHOLD})", flush=True)
                     if raw_score > THRESHOLD:
                         print(f"[Wake] *** WAKE WORD DETECTED *** (score={raw_score:.3f})", flush=True)
                         model.reset()
@@ -505,14 +517,15 @@ def main():
             # Play thinking chime immediately
             chime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "thinking.wav")
             if os.path.exists(chime_path):
-                subprocess.run(["aplay", "-D", device, "-q", chime_path], timeout=2)
+                subprocess.run(["paplay", "--device=aec_sink", chime_path], timeout=2, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             oui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "oui.wav")
-            subprocess.run(["aplay", "-D", device, "-q", oui_path], timeout=3)
+            subprocess.run(["paplay", "--device=aec_sink", oui_path], timeout=3, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             mic_proc = open_mic(device)
             print("[Wake] Recording voice...", flush=True)
             chunks = []
             last_voice_time = time.time()
             start_time = time.time()
+            got_any_speech = False
 
             while True:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
@@ -523,13 +536,17 @@ def main():
                 chunks.append(raw)
                 if is_speech_vad(raw):
                     last_voice_time = time.time()
+                    got_any_speech = True
 
                 now = time.time()
                 elapsed = now - start_time
                 silence_duration = now - last_voice_time
 
-                if silence_duration > SILENCE_TIMEOUT_S:
+                if got_any_speech and silence_duration > SILENCE_TIMEOUT_S:
                     print(f"[Wake] Silence detected after {elapsed:.1f}s", flush=True)
+                    break
+                if not got_any_speech and elapsed > 3.0:
+                    print(f"[Wake] No speech detected after 3s, giving up", flush=True)
                     break
                 if elapsed > MAX_RECORD_S:
                     print(f"[Wake] Max recording time reached ({MAX_RECORD_S}s)", flush=True)
@@ -624,7 +641,7 @@ def main():
                     # Play queued sentences
                     if not barged:
                         while True:
-                            q = recv_json_buffered(conn, timeout=30)
+                            q = recv_json_buffered(conn, timeout=5)
                             if not q:
                                 break
                             if q.get("type") == "speak_queue":
@@ -655,7 +672,7 @@ def main():
                         close_mic(mic_proc)
                         mic_proc = open_mic(device)
                         # Flush 1s of audio buffer (discard barge-in residual)
-                        flush_end = time.time() + 1.0
+                        flush_end = time.time() + 0.8
                         while time.time() < flush_end:
                             mic_proc.stdout.read(BYTES_PER_CHUNK)
                         follow_start = time.time()
@@ -703,11 +720,11 @@ def main():
                         # filler_thread = threading.Thread(target=play_filler, daemon=True)
                         # filler_thread.start()
                         send_json(conn, {"type": "audio", "data": b64_audio})
-                        resp2 = recv_json(conn, timeout=60)
+                        resp2 = recv_json(conn, timeout=15)
                         # filler_thread.join(timeout=5)
                         
                         while resp2 and resp2.get("type") == "play_filler":
-                            resp2 = recv_json(conn, timeout=60)
+                            resp2 = recv_json(conn, timeout=15)
                         if resp2 and resp2.get("type") == "shutdown":
                             print("[Wake] Shutdown command — ending conversation", flush=True)
                             break
