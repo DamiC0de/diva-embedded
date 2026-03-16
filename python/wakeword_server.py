@@ -47,7 +47,7 @@ PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
-THRESHOLD = 0.45
+THRESHOLD = 0.35
 SILENCE_TIMEOUT_S = 1.2
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
@@ -133,7 +133,7 @@ def ensure_model() -> str:
 # Audio helpers
 # ---------------------------------------------------------------------------
 def open_mic(device: str) -> subprocess.Popen:
-    """Open microphone via arecord with retry on busy device."""
+    """Open microphone via parecord (PulseAudio AEC) with retry."""
     for attempt in range(3):
         try:
             proc = subprocess.Popen(
@@ -198,9 +198,10 @@ def speak_tts(text: str, device: str, oww_model=None, conn=None):
         tmp_wav = "/tmp/diva_speak.wav"
         with open(tmp_wav, "wb") as f:
             f.write(wav_data)
+        env = dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native")
         play_proc = subprocess.Popen(
-            ["aplay", "-D", device, "-q", tmp_wav],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["paplay", "--device=aec_sink", tmp_wav],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
         )
         piper_proc = None  # No piper process to manage
         
@@ -310,7 +311,7 @@ def play_wav(path: str, device: str, oww_model=None, conn=None):
     print(f"[Wake] Playing {path}...", flush=True)
     try:
         play_proc = subprocess.Popen(
-            ["aplay", "-D", device, path],
+            ["paplay", "--device=aec_sink", path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         
@@ -501,7 +502,7 @@ def main():
                 # Use raw prediction scores (prediction_buffer saturates with custom models)
                 for model_name in prediction:
                     raw_score = prediction[model_name]
-                    if raw_score > 0.1:
+                    if raw_score > 0.01:
                         print(f"[Wake] Score: {raw_score:.3f} (threshold={THRESHOLD})", flush=True)
                     if raw_score > THRESHOLD:
                         print(f"[Wake] *** WAKE WORD DETECTED *** (score={raw_score:.3f})", flush=True)
@@ -515,9 +516,9 @@ def main():
             # Play thinking chime immediately
             chime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "thinking.wav")
             if os.path.exists(chime_path):
-                subprocess.run(["aplay", "-D", device, "-q", chime_path], timeout=2)
+                subprocess.run(["paplay", "--device=aec_sink", chime_path], timeout=2, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             oui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "oui.wav")
-            subprocess.run(["aplay", "-D", device, "-q", oui_path], timeout=3)
+            subprocess.run(["paplay", "--device=aec_sink", oui_path], timeout=3, env=dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native"))
             mic_proc = open_mic(device)
             print("[Wake] Recording voice...", flush=True)
             chunks = []
@@ -639,7 +640,7 @@ def main():
                     # Play queued sentences
                     if not barged:
                         while True:
-                            q = recv_json_buffered(conn, timeout=30)
+                            q = recv_json_buffered(conn, timeout=5)
                             if not q:
                                 break
                             if q.get("type") == "speak_queue":
@@ -718,11 +719,11 @@ def main():
                         # filler_thread = threading.Thread(target=play_filler, daemon=True)
                         # filler_thread.start()
                         send_json(conn, {"type": "audio", "data": b64_audio})
-                        resp2 = recv_json(conn, timeout=60)
+                        resp2 = recv_json(conn, timeout=15)
                         # filler_thread.join(timeout=5)
                         
                         while resp2 and resp2.get("type") == "play_filler":
-                            resp2 = recv_json(conn, timeout=60)
+                            resp2 = recv_json(conn, timeout=15)
                         if resp2 and resp2.get("type") == "shutdown":
                             print("[Wake] Shutdown command — ending conversation", flush=True)
                             break

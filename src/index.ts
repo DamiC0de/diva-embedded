@@ -3,6 +3,7 @@ import * as net from "node:net";
 import { execSync, spawn } from "node:child_process";
 import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeStreamingClient } from "./llm/claude-streaming.js";
+import { chatQwen } from "./llm/qwen-local.js";
 import { synthesize } from "./tts/piper.js";
 import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
 import { handleWebSearch } from "./tools/searxng-search.js";
@@ -112,6 +113,14 @@ async function handleAudio(socket: net.Socket, b64Audio: string): Promise<void> 
       }
     }
   );
+
+  // Fallback if streaming produced nothing
+  if (!fullResponse || fullResponse.trim().length === 0) {
+    const fallback = "Desole, je n ai pas pu repondre.";
+    console.warn("[Diva] Empty streaming response, using fallback");
+    sendJson(socket, { type: "speak", text: fallback });
+    // fallback sent
+  }
 
   console.log(`[Diva] Full response: "${fullResponse}"`);
   await memory.addMessage("assistant", fullResponse);

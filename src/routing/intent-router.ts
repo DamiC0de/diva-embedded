@@ -33,14 +33,18 @@ export async function classifyIntent(text: string): Promise<IntentResult> {
   }
 }
 
-async function fetchWeather(): Promise<string> {
+async function fetchWeather(text: string): Promise<string> {
+  // Extract city from text or default to Bouclans
+  let city = "Bouclans";
+  const cityMatch = text.match(/m[eé]t[eé]o\s+(?:de\s+|[aà]\s+)?([A-Z][a-z]+)/i) || text.match(/(?:[aà]|de)\s+([A-Z][a-zé]+)\s*\??$/i);
+  if (cityMatch) city = cityMatch[1];
   try {
-    const res = await fetch("https://wttr.in/Paris?format=%C+%t&lang=fr", {
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=%C+%t&lang=fr`, {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const weather = (await res.text()).trim();
-    return `A Paris il fait ${weather}.`;
+    return `A ${city} il fait ${weather}.`;
   } catch {
     return "";
   }
@@ -66,7 +70,7 @@ export async function handleLocalIntent(category: string, text: string): Promise
     }
 
     case "weather": {
-      const weather = await fetchWeather();
+      const weather = await fetchWeather(text);
       if (weather) return { handled: true, response: weather };
       return { handled: false }; // fallback to Claude
     }

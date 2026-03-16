@@ -20,15 +20,20 @@ export async function classifyIntent(text) {
         return { intent: "complex", category: "fallback", confidence: 0, latency_ms: 0 };
     }
 }
-async function fetchWeather() {
+async function fetchWeather(text) {
+    // Extract city from text or default to Bouclans
+    let city = "Bouclans";
+    const cityMatch = text.match(/m[eé]t[eé]o\s+(?:de\s+|[aà]\s+)?([A-Z][a-z]+)/i) || text.match(/(?:[aà]|de)\s+([A-Z][a-zé]+)\s*\??$/i);
+    if (cityMatch)
+        city = cityMatch[1];
     try {
-        const res = await fetch("https://wttr.in/Paris?format=%C+%t&lang=fr", {
+        const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=%C+%t&lang=fr`, {
             signal: AbortSignal.timeout(3000),
         });
         if (!res.ok)
             throw new Error(`HTTP ${res.status}`);
         const weather = (await res.text()).trim();
-        return `A Paris il fait ${weather}.`;
+        return `A ${city} il fait ${weather}.`;
     }
     catch {
         return "";
@@ -56,7 +61,7 @@ export async function handleLocalIntent(category, text) {
             return { handled: true, response: `Il est ${timeStr}, on est le ${dateStr}.` };
         }
         case "weather": {
-            const weather = await fetchWeather();
+            const weather = await fetchWeather(text);
             if (weather)
                 return { handled: true, response: weather };
             return { handled: false }; // fallback to Claude
