@@ -57,8 +57,11 @@ export async function handleLocalIntent(category: string, text: string): Promise
         weekday: "long", day: "numeric", month: "long", year: "numeric",
         timeZone: "Europe/Paris"
       });
-      if (/heure/i.test(text)) return { handled: true, response: `Il est ${timeStr}.` };
-      if (/jour|date/i.test(text)) return { handled: true, response: `On est le ${dateStr}.` };
+      const wantTime = /heure/i.test(text);
+      const wantDate = /jour|date/i.test(text);
+      if (wantTime && wantDate) return { handled: true, response: `Il est ${timeStr}, et on est le ${dateStr}.` };
+      if (wantTime) return { handled: true, response: `Il est ${timeStr}.` };
+      if (wantDate) return { handled: true, response: `On est le ${dateStr}.` };
       return { handled: true, response: `Il est ${timeStr}, on est le ${dateStr}.` };
     }
 
@@ -75,7 +78,7 @@ export async function handleLocalIntent(category: string, text: string): Promise
       const h = parseInt(hour);
       let timeGreet: string;
       if (h >= 5 && h < 12) timeGreet = "Bonjour";
-      else if (h >= 12 && h < 18) timeGreet = "Hey";
+      else if (h >= 12 && h < 18) timeGreet = "Salut";
       else if (h >= 18 && h < 22) timeGreet = "Bonsoir";
       else timeGreet = "Coucou";
 
@@ -110,6 +113,31 @@ export async function handleLocalIntent(category: string, text: string): Promise
 
     case "baby": {
       return { handled: true, response: "Pour le suivi de Jean, ouvre BabySync sur ton telephone. Tu veux que je te rappelle quelque chose ?" };
+    }
+
+    case "conversational": {
+      const t = text.toLowerCase();
+      if (/comment.*(vas?|va|allez)/i.test(t) || /[çc]a va/i.test(t)) {
+        const r = ["Ca va bien merci!", "Nickel!", "Tout roule!"];
+        return { handled: true, response: r[Math.floor(Math.random() * r.length)] };
+      }
+      if (/merci/i.test(t)) {
+        const r = ["De rien!", "Pas de quoi!", "A ton service!"];
+        return { handled: true, response: r[Math.floor(Math.random() * r.length)] };
+      }
+      if (/super|genial|cool|parfait/i.test(t)) {
+        return { handled: true, response: "Content que ca te plaise!" };
+      }
+      if (/oui|ok|d.accord|exactement/i.test(t)) {
+        return { handled: true, response: "OK!" };
+      }
+      if (/non|pas|rien/i.test(t)) {
+        return { handled: true, response: "D accord, pas de souci." };
+      }
+      if (/c.est (tout|bon)/i.test(t)) {
+        return { handled: true, response: "OK, je reste la si besoin!" };
+      }
+      return { handled: false }; // fallback to Claude
     }
 
     case "shutdown": {

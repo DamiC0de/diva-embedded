@@ -47,14 +47,14 @@ PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
-THRESHOLD = 0.6
-SILENCE_TIMEOUT_S = 0.4
+THRESHOLD = 0.45
+SILENCE_TIMEOUT_S = 1.2
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
 FOLLOW_UP_TIMEOUT_S = 2.0
 _pending_messages = []  # Buffer for messages received during speak_tts
 
-MODEL_NAME = "hey_jarvis_v0.1"
+MODEL_NAME = "diva_fr"
 MODEL_FILE = f"{MODEL_NAME}.onnx"
 MODEL_URL = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{MODEL_FILE}"
 
@@ -176,8 +176,15 @@ def close_mic(proc: subprocess.Popen | None):
     print("[Wake] Mic closed", flush=True)
 
 
+def strip_emojis(text):
+    import re
+    return re.sub(r'[😀-🙏🌀-🗿🚀-🛿🇠-🇿✂-➰🤦-🤷☀-⭕️]+', '', text).strip()
+
 def speak_tts(text: str, device: str, oww_model=None, conn=None):
     """TTS via Piper HTTP server (model stays loaded) + aplay. Returns keyword or False."""
+    text = strip_emojis(text)
+    if not text:
+        return False
     print(f"[Wake] Speaking: {text[:60]}...", flush=True)
     try:
         # Use Piper HTTP server (model already in memory = fast)
@@ -471,6 +478,7 @@ def main():
 
             detected = False
             chunk_count = 0
+            wake_listen_start = time.time()
             while not detected:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
                 if not raw or len(raw) < BYTES_PER_CHUNK:
@@ -493,6 +501,8 @@ def main():
                 # Use raw prediction scores (prediction_buffer saturates with custom models)
                 for model_name in prediction:
                     raw_score = prediction[model_name]
+                    if raw_score > 0.1:
+                        print(f"[Wake] Score: {raw_score:.3f} (threshold={THRESHOLD})", flush=True)
                     if raw_score > THRESHOLD:
                         print(f"[Wake] *** WAKE WORD DETECTED *** (score={raw_score:.3f})", flush=True)
                         model.reset()
@@ -513,6 +523,7 @@ def main():
             chunks = []
             last_voice_time = time.time()
             start_time = time.time()
+            got_any_speech = False
 
             while True:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
@@ -523,13 +534,17 @@ def main():
                 chunks.append(raw)
                 if is_speech_vad(raw):
                     last_voice_time = time.time()
+                    got_any_speech = True
 
                 now = time.time()
                 elapsed = now - start_time
                 silence_duration = now - last_voice_time
 
-                if silence_duration > SILENCE_TIMEOUT_S:
+                if got_any_speech and silence_duration > SILENCE_TIMEOUT_S:
                     print(f"[Wake] Silence detected after {elapsed:.1f}s", flush=True)
+                    break
+                if not got_any_speech and elapsed > 3.0:
+                    print(f"[Wake] No speech detected after 3s, giving up", flush=True)
                     break
                 if elapsed > MAX_RECORD_S:
                     print(f"[Wake] Max recording time reached ({MAX_RECORD_S}s)", flush=True)
@@ -655,7 +670,7 @@ def main():
                         close_mic(mic_proc)
                         mic_proc = open_mic(device)
                         # Flush 1s of audio buffer (discard barge-in residual)
-                        flush_end = time.time() + 1.0
+                        flush_end = time.time() + 0.8
                         while time.time() < flush_end:
                             mic_proc.stdout.read(BYTES_PER_CHUNK)
                         follow_start = time.time()

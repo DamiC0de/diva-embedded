@@ -133,7 +133,7 @@ async function main() {
     server.listen(PORT, HOST, () => {
         console.log(`[Diva] TCP server listening on ${HOST}:${PORT}`);
         console.log("[Diva] Starting Python wakeword process...");
-        const pythonProc = spawn("python3", ["python/wakeword_server.py"], {
+        const pythonProc = spawn("/opt/npu-env/bin/python", ["python/wakeword_server.py"], {
             stdio: ["ignore", "inherit", "inherit"],
             cwd: process.cwd(),
         });

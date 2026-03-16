@@ -25,18 +25,10 @@ function isValidFrenchTranscript(text) {
     return true;
 }
 export async function transcribeLocal(wavBuffer) {
-    // Try NPU first (fast, local)
-    try {
-        const npuResult = await transcribeNPU(wavBuffer);
-        if (isValidFrenchTranscript(npuResult)) {
-            console.log(`[STT] NPU OK: "${npuResult}"`);
-            return npuResult;
-        }
-        console.warn(`[STT] NPU returned invalid French: "${npuResult}", falling back to Groq`);
-    }
-    catch (err) {
-        console.warn(`[STT] NPU error: ${err}, falling back to Groq`);
-    }
+    // Estimate audio duration from buffer size (16-bit, 16kHz, mono = 32000 bytes/sec)
+    const audioDurationSec = Math.max(0.1, (wavBuffer.length - 44) / 32000);
+    // NPU SenseVoice does NOT support French — skip it entirely
+    // Go straight to Groq Whisper which handles French perfectly
     // Fallback to Groq Whisper (cloud, accurate French)
     try {
         const groqResult = await transcribeGroqFallback(wavBuffer);
@@ -54,6 +46,7 @@ async function transcribeNPU(wavBuffer) {
     const form = new FormData();
     form.append("file", blob, "audio.wav");
     form.append("language", "fr");
+    form.append("prompt", "Bonjour, quelle heure est-il ? Quel temps fait-il ? Qui est le président ?");
     const response = await fetch(`${LOCAL_STT_URL}/v1/audio/transcriptions`, {
         method: "POST",
         body: form,
@@ -75,6 +68,7 @@ async function transcribeGroqFallback(wavBuffer) {
     form.append("file", blob, "audio.wav");
     form.append("model", "whisper-large-v3");
     form.append("language", "fr");
+    form.append("prompt", "Bonjour, quelle heure est-il ? Quel temps fait-il ? Qui est le président ?");
     form.append("response_format", "json");
     const response = await fetch(GROQ_API_URL, {
         method: "POST",
