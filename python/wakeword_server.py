@@ -647,7 +647,7 @@ def main():
                     # Play queued sentences
                     if not barged:
                         while True:
-                            q = recv_json_buffered(conn, timeout=5)
+                            q = recv_json_buffered(conn, timeout=0.5)
                             if not q:
                                 break
                             if q.get("type") == "speak_queue":
@@ -656,7 +656,7 @@ def main():
                                     barged = speak_tts(qtext, device, oww_model=model, conn=conn)
                                     if barged:
                                         while True:
-                                            d = recv_json_buffered(conn, timeout=5)
+                                            d = recv_json_buffered(conn, timeout=0.5)
                                             if not d or d.get("type") == "play_done":
                                                 break
                                         break
@@ -750,7 +750,7 @@ def main():
                                 # Play queued sentences
                                 if not barged2:
                                     while True:
-                                        q2 = recv_json_buffered(conn, timeout=5)
+                                        q2 = recv_json_buffered(conn, timeout=0.5)
                                         if not q2:
                                             break
                                         if q2.get("type") == "speak_queue":
@@ -759,7 +759,7 @@ def main():
                                                 barged2 = speak_tts(qt, device, oww_model=model, conn=conn)
                                                 if barged2:
                                                     while True:
-                                                        d2 = recv_json_buffered(conn, timeout=5)
+                                                        d2 = recv_json_buffered(conn, timeout=0.5)
                                                         if not d2 or d2.get("type") == "play_done":
                                                             break
                                                     break
