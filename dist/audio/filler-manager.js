@@ -35,16 +35,7 @@ export function getRandomFiller(category) {
     return files[Math.floor(Math.random() * files.length)];
 }
 
-function isNightMode() {
-    const hour = new Date().getHours();
-    return false; // Night mode disabled
-}
-
 export function chooseFiller(intent, text) {
-    if (isNightMode()) {
-        return { primary: getRandomFiller('micro-fillers'), secondary: null };
-    }
-
     const lower = text.toLowerCase();
 
     if (/\b(recette|cuisiner|préparer|ingrédients|gâteau|plat|soupe|poulet|pâtes|tarte|gratin)\b/i.test(lower)) {

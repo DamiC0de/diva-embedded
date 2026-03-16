@@ -107,7 +107,7 @@ async function handleAudio(socket, b64Audio) {
     console.log(`[Diva] Current user: ${currentSpeaker}`);
     
     // Get memories for this specific user
-    const speakerMemories = await getMemorySummary();
+    const speakerMemories = await getMemorySummary(transcription);
     
     // Build speaker context for Claude
     let speakerContext = "";

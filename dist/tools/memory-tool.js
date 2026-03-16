@@ -104,7 +104,7 @@ export async function getMemorySummary() {
     if (memories.length === 0)
         return "";
     return memories
-        .slice(-10)
+        
         .map((m) => m.memory)
         .join("\n");
 }
