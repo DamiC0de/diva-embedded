@@ -70,7 +70,12 @@ async function handleAudio(socket, b64Audio) {
             await memory.addMessage("assistant", local.response);
             // Single sentence — send directly as speak
             sendJson(socket, { type: "speak", text: local.response });
-            sendJson(socket, { type: "play_done" });
+            // Send shutdown signal if it was a shutdown command
+            if (intent.category === "shutdown") {
+                sendJson(socket, { type: "shutdown" });
+            } else {
+                sendJson(socket, { type: "play_done" });
+            }
             return;
         }
         console.log("[Diva] Local handler declined, falling back to Claude...");

@@ -644,11 +644,15 @@ def main():
                     
                     # Speak first sentence via TTS pipe (no file)
                     barged = speak_tts(text, device, oww_model=model, conn=conn)
-                    # Play queued sentences
+                    # Play queued sentences (or detect shutdown)
+                    got_shutdown = False
                     if not barged:
                         while True:
                             q = recv_json_buffered(conn, timeout=0.5)
                             if not q:
+                                break
+                            if q.get("type") == "shutdown":
+                                got_shutdown = True
                                 break
                             if q.get("type") == "speak_queue":
                                 qtext = q.get("text", "")
@@ -665,9 +669,30 @@ def main():
                             else:
                                 break
                     
-                    # If shutdown keyword, go back to wake word
+                    # Check if we got shutdown signal
+                    if not got_shutdown:
+                        next_msg = recv_json_buffered(conn, timeout=0.5)
+                        if next_msg and next_msg.get("type") == "shutdown":
+                            got_shutdown = True
+                    if got_shutdown:
+                        print("[Wake] Shutdown signal received — ending conversation", flush=True)
+                        # Play goodbye sound
+                        try:
+                            goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                            if os.path.exists(goodbye_path):
+                                subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except: pass
+                        continue
+                    
+                    # If shutdown keyword detected via barge-in, go back to wake word
                     if barged and any(kw in str(barged).lower() for kw in SHUTDOWN_KEYWORDS):
                         print("[Wake] Shutdown keyword — ending conversation", flush=True)
+                        # Play goodbye sound
+                        try:
+                            goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                            if os.path.exists(goodbye_path):
+                                subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except: pass
                         continue
                     
                     # Conversation loop — keep listening after each response
@@ -713,6 +738,12 @@ def main():
                                     break
                                 elif not got_speech and time.time() - follow_start > FOLLOW_UP_TIMEOUT_S:
                                     print("[Wake] No follow-up detected, back to wake word", flush=True)
+                                    # Play goodbye sound
+                                    try:
+                                        goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                                        if os.path.exists(goodbye_path):
+                                            subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    except: pass
                                     follow_chunks = []
                                     break
                         
@@ -742,6 +773,12 @@ def main():
                             resp2 = recv_json(conn, timeout=15)
                         if resp2 and resp2.get("type") == "shutdown":
                             print("[Wake] Shutdown command — ending conversation", flush=True)
+                            # Play goodbye sound
+                            try:
+                                goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                                if os.path.exists(goodbye_path):
+                                    subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            except: pass
                             break
                         if resp2 and resp2.get("type") == "speak":
                             text2 = resp2.get("text", "")
