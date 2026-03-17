@@ -179,7 +179,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
                 time.sleep(0.1)
                 continue
 
-            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            audio = np.frombuffer(raw, dtype=np.int16)
             prediction = oww_model.predict(audio)
 
             for model_name, score in prediction.items():
