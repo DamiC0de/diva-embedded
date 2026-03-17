@@ -677,7 +677,7 @@ def main():
     except Exception as e:
         print(f"[Wake] Warning: could not ensure feature models: {e}", flush=True)
 
-    model = Model(wakeword_model_paths=[model_path])
+    model = Model(wakeword_model_paths=[model_path], inference_framework="onnx")
     loaded = list(model.models.keys()) if hasattr(model, 'models') else list(model.prediction_buffer.keys())
     print(f"[Wake] Models loaded: {loaded}", flush=True)
     if not loaded:
@@ -710,6 +710,18 @@ def main():
             # --- Wake word detection phase ---
             print("\n[Wake] Listening for wake word...", flush=True)
             mic_proc = open_mic(device)
+
+            # Drain audio buffer + reset model to avoid stale embeddings
+            # triggering false positives from previous detection
+            print("[Wake] Draining audio buffer...", flush=True)
+            drain_chunks = int(2.0 * SAMPLE_RATE / CHUNK_SAMPLES)
+            for _ in range(drain_chunks):
+                raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
+                if raw and len(raw) == BYTES_PER_CHUNK:
+                    audio = np.frombuffer(raw, dtype=np.int16)
+                    model.predict(audio)
+            model.reset()
+            print("[Wake] Buffer drained, ready.", flush=True)
 
             detected = False
             chunk_count = 0
