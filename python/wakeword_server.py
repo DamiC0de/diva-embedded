@@ -677,7 +677,7 @@ def main():
     except Exception as e:
         print(f"[Wake] Warning: could not ensure feature models: {e}", flush=True)
 
-    model = Model(wakeword_model_paths=[model_path], inference_framework="onnx")
+    model = Model(wakeword_model_paths=[model_path])
     loaded = list(model.models.keys()) if hasattr(model, 'models') else list(model.prediction_buffer.keys())
     print(f"[Wake] Models loaded: {loaded}", flush=True)
     if not loaded:
