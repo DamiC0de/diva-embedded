@@ -183,7 +183,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
             prediction = oww_model.predict(audio)
 
             for model_name, score in prediction.items():
-                print(f"[WW] Score: {score:.3f}", flush=True)
+                if score > 0.5: print(f"[WW] Score: {score:.3f}", flush=True)
                 if score >= WAKEWORD_THRESHOLD:
                     oww_model.reset()
                     return {"score": float(score), "model": model_name}
@@ -207,10 +207,7 @@ async def audio_record(req: RecordRequest):
     )
 
     if result is None:
-        return JSONResponse(
-            status_code=204,
-            content={"has_speech": False, "reason": "no_speech_detected"}
-        )
+        return {"has_speech": False, "reason": "no_speech_detected"}
 
     wav_buffer = io.BytesIO()
     with wave.open(wav_buffer, "wb") as wf:
@@ -233,6 +230,8 @@ def _record_with_vad(
     min_speech_ms: float,
 ) -> dict | None:
     """Enregistre avec VAD Silero."""
+    subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+    time.sleep(0.2)
     import torch
 
     proc = subprocess.Popen(
