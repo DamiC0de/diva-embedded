@@ -12,7 +12,7 @@ import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeStreamingClient } from "./llm/claude-streaming.js";
 import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
 import { handleWebSearch } from "./tools/searxng-search.js";
-import { handleMemoryRead, handleMemoryWrite, getMemorySummary, addMemory, } from "./tools/memory-tool.js";
+import { handleMemoryRead, handleMemoryWrite, getMemorySummary, addMemory, addConversation, identifySpeaker, getCurrentUser } from "./tools/memory-tool.js";
 import { chooseFiller } from "./audio/filler-manager.js";
 import { synthesize } from "./tts/piper.js";
 import { readdirSync } from "node:fs";
@@ -104,6 +104,9 @@ async function conversationLoop() {
             break;
         }
         console.log(`[REC] Audio capturé : ${recorded.duration_ms}ms`);
+        // Identify speaker from audio
+        const speaker = await identifySpeaker(recorded.wav_base64);
+        console.log(`[SPEAKER] ${speaker} (user=${getCurrentUser()})`);
         // --- TRANSCRIRE ---
         const wavBuffer = Buffer.from(recorded.wav_base64, "base64");
         const transcription = await transcribeLocal(wavBuffer);
@@ -143,7 +146,7 @@ function getCachedResponse(category) {
 }
 
 async function handleTranscription(transcription) {
-    // await addMemory( transcription);
+    // transcription is now saved via addConversation
     // --- CLASSIFIER L'INTENT ---
     const intent = await classifyIntent(transcription);
     console.log(`[INTENT] ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
@@ -201,7 +204,7 @@ async function handleTranscription(transcription) {
         return;
     }
     console.log(`[CLAUDE] Full: "${fullResponse}"`);
-    await addMemory(fullResponse);
+    await addConversation(transcription, fullResponse);
 }
 // =====================================================================
 // MAIN
