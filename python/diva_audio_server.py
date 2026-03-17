@@ -337,7 +337,7 @@ def _play_wav_safe(wav_path: str):
             ["aplay", "-D", ALSA_DEVICE, wav_path],
             capture_output=True, timeout=30
         )
-        time.sleep(0.2)
+        time.sleep(0.05)
     finally:
         _unmute_mic()
 
@@ -376,7 +376,7 @@ def _mute_mic():
 def _unmute_mic():
     global is_muted
     is_muted = False
-    time.sleep(0.5)  # Wait for audio buffer to clear
+    time.sleep(0.1)  # Wait for audio buffer to clear
 
 
 # =====================================================================

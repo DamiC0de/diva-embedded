@@ -15,6 +15,10 @@ import { handleWebSearch } from "./tools/searxng-search.js";
 import { handleMemoryRead, handleMemoryWrite, getMemorySummary, addMemory, } from "./tools/memory-tool.js";
 import { chooseFiller } from "./audio/filler-manager.js";
 import { synthesize } from "./tts/piper.js";
+import { readdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
 // =====================================================================
 // CONFIG
 // =====================================================================
@@ -127,6 +131,17 @@ async function conversationLoop() {
     }
     console.log("[CONV] Fin de conversation, retour au wake word\n");
 }
+
+const __cached_dir = join(dirname(fileURLToPath(import.meta.url)), "../assets/cached-responses");
+function getCachedResponse(category) {
+    try {
+        const dir = join(__cached_dir, category);
+        const files = readdirSync(dir).filter(f => f.endsWith(".wav"));
+        if (files.length === 0) return null;
+        return join(dir, files[Math.floor(Math.random() * files.length)]);
+    } catch { return null; }
+}
+
 async function handleTranscription(transcription) {
     // await addMemory( transcription);
     // --- CLASSIFIER L'INTENT ---
@@ -136,6 +151,17 @@ async function handleTranscription(transcription) {
     if (intent.intent === "local_simple") {
         const local = await handleLocalIntent(intent.category, transcription);
         if (local.handled && local.response) {
+            // Check for cached audio response
+            const cachedCategories = {"greeting": "greetings", "goodbye": "goodbye", "shutdown": "shutdown", "conversational": "conversational"};
+            const cachedDir = cachedCategories[intent.category];
+            if (cachedDir) {
+                const cachedPath = getCachedResponse(cachedDir);
+                if (cachedPath) {
+                    console.log(`[CACHED] Playing ${cachedPath}`);
+                    await playAudioFile(cachedPath);
+                    return;
+                }
+            }
             console.log(`[LOCAL] "${local.response}"`);
             await addMemory(local.response);
             await speakTTS(local.response);
