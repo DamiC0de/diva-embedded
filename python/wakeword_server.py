@@ -1113,6 +1113,24 @@ def main():
                     print(f"[Wake] WAV file not found: {wav_path}", flush=True)
             elif response and response.get("type") == "error":
                 print(f"[Wake] Node.js error: {response.get('message', 'unknown')}", flush=True)
+            elif response and response.get("type") == "play_done":
+                # play_done arrived before speak — keep waiting
+                print("[Wake] Got play_done early, waiting for speak...", flush=True)
+                response = recv_json_buffered(conn, timeout=5.0)
+                if response and response.get("type") == "speak":
+                    text = response.get("text", "")
+                    if text:
+                        barged = speak_tts(text, device, oww_model=model, conn=conn)
+                        if barged == "GOODBYE":
+                            print("[Wake] Goodbye spoken — back to wake word", flush=True)
+                            try:
+                                goodbye_path = os.path.join(os.path.dirname(__file__), "..", "assets", "goodbye.wav")
+                                if os.path.exists(goodbye_path):
+                                    subprocess.run(["aplay", "-D", "plughw:5", goodbye_path], timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            except: pass
+                            continue
+                else:
+                    print(f"[Wake] Still no speak after play_done: {response}", flush=True)
             else:
                 print(f"[Wake] Unexpected response: {response}", flush=True)
 

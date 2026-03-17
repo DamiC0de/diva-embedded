@@ -37,3 +37,4 @@ export declare function handleMemoryRead(input: Record<string, string>): Promise
 export declare function handleMemoryWrite(input: Record<string, string>): Promise<string>;
 export declare function identifySpeaker(audioB64: string): Promise<string>;
 export {};
+//# sourceMappingURL=memory-tool.d.ts.map

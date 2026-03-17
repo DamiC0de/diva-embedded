@@ -104,7 +104,7 @@ export async function getMemorySummary() {
     if (memories.length === 0)
         return "";
     return memories
-        
+        .slice(-10)
         .map((m) => m.memory)
         .join("\n");
 }
@@ -140,7 +140,7 @@ export async function identifySpeaker(audioB64) {
         const confidence = data.confidence || 0;
         console.log(`[Memory] Speaker identified: ${speaker} (confidence: ${confidence})`);
         // Auto-switch user if confident
-        if (speaker !== "unknown" && confidence > 0.35) {
+        if (speaker !== "unknown" && confidence > 0.6) {
             setCurrentUser(speaker);
         }
         return speaker;
@@ -150,3 +150,4 @@ export async function identifySpeaker(audioB64) {
         return "unknown";
     }
 }
+//# sourceMappingURL=memory-tool.js.map

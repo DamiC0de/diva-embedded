@@ -1,194 +1,281 @@
+/**
+ * index.ts — Diva Embedded Voice Assistant (HTTP Architecture)
+ * 
+ * Node.js est l'orchestrateur principal.
+ * Python (FastAPI sur port 9010) exécute les opérations audio.
+ * Plus de protocole TCP bidirectionnel fragile.
+ */
+
 import "dotenv/config";
-import * as net from "node:net";
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
+import {
+    waitForWakeword,
+    recordAudio,
+    playAudioFile,
+    playAudioBytes,
+    checkHealth,
+} from "./audio/audio-client.js";
 import { transcribeLocal } from "./stt/local-npu.js";
 import { ClaudeStreamingClient } from "./llm/claude-streaming.js";
-import { chatQwen } from "./llm/qwen-local.js";
-import { synthesize } from "./tts/piper.js";
 import { classifyIntent, handleLocalIntent } from "./routing/intent-router.js";
 import { handleWebSearch } from "./tools/searxng-search.js";
 import {
-  handleMemoryRead,
-  handleMemoryWrite,
-  getMemorySummary,
-  getMemoryManager,
+    handleMemoryRead,
+    handleMemoryWrite,
+    getMemorySummary,
+    addMemory,
 } from "./tools/memory-tool.js";
+import { chooseFiller } from "./audio/filler-manager.js";
+import { synthesize } from "./tts/piper.js";
 
-const PORT = 9001;
-const HOST = "127.0.0.1";
+// =====================================================================
+// CONFIG
+// =====================================================================
+
+const FOLLOW_UP_ENABLED = true;
+const FOLLOW_UP_TIMEOUT_S = 5;
+const ASSETS_DIR = "/opt/diva-embedded/assets";
+
+// Goodbye phrases pour détecter fin de conversation
+const GOODBYE_PHRASES = [
+    "bonne nuit", "au revoir", "à plus", "salut", "ciao",
+    "j'ai fini", "c'est bon", "merci c'est tout", "ça ira"
+];
+
+// =====================================================================
+// GLOBALS
+// =====================================================================
 
 const claude = new ClaudeStreamingClient();
-const memory = getMemoryManager();
+
+// =====================================================================
+// INIT
+// =====================================================================
 
 async function init(): Promise<void> {
-  claude.registerTool("brave_search", handleWebSearch);
-  claude.registerTool("memory_read", handleMemoryRead);
-  claude.registerTool("memory_write", handleMemoryWrite);
+    claude.registerTool("brave_search", handleWebSearch);
+    claude.registerTool("memory_read", handleMemoryRead);
+    claude.registerTool("memory_write", handleMemoryWrite);
 
-  const memorySummary = await getMemorySummary();
-  if (memorySummary) {
-    claude.setMemorySummary(memorySummary);
-  }
+    const memorySummary = await getMemorySummary();
+    if (memorySummary) {
+        claude.setMemorySummary(memorySummary);
+    }
 }
 
-function handleConnection(socket: net.Socket): void {
-  console.log("[Diva] Python client connected");
-  let buffer = "";
+// =====================================================================
+// UTILS
+// =====================================================================
 
-  socket.on("data", (data) => {
-    buffer += data.toString();
-    let newlineIdx: number;
-    while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, newlineIdx).trim();
-      buffer = buffer.slice(newlineIdx + 1);
-      if (!line) continue;
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-      let msg: { type: string; data?: string };
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        console.error("[Diva] Invalid JSON from Python:", line.slice(0, 100));
-        continue;
-      }
+function containsGoodbye(text: string): boolean {
+    const lower = text.toLowerCase();
+    return GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
+}
 
-      if (msg.type === "audio" && msg.data) {
-        handleAudio(socket, msg.data).catch((err) => {
-          console.error("[Diva] Pipeline error:", err);
-          sendJson(socket, { type: "error", message: String(err) });
+// =====================================================================
+// TTS
+// =====================================================================
+
+async function speakTTS(text: string): Promise<void> {
+    try {
+        const wavBuffer = await synthesize(text);
+        const wavBase64 = wavBuffer.toString("base64");
+        await playAudioBytes(wavBase64);
+    } catch (err) {
+        console.error("[TTS] Error:", err);
+    }
+}
+
+// =====================================================================
+// MAIN LOOPS
+// =====================================================================
+
+async function idleLoop(): Promise<void> {
+    console.log("\n[IDLE] En attente du wake word...");
+
+    // Attendre "Diva"
+    const wakeword = await waitForWakeword();
+    if (!wakeword.detected) return;
+
+    console.log(`[WAKEWORD] Détecté ! Score: ${wakeword.score.toFixed(3)}`);
+
+    // Jouer le chime de confirmation
+    await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+
+    // Entrer en mode conversation
+    await conversationLoop();
+}
+
+async function conversationLoop(): Promise<void> {
+    let isFirstTurn = true;
+    let turnCount = 0;
+
+    while (true) {
+        turnCount++;
+
+        // --- ENREGISTRER ---
+        console.log("[REC] Enregistrement en cours...");
+        const recorded = await recordAudio({
+            maxDurationS: 10,
+            silenceTimeoutS: isFirstTurn ? 1.5 : 1.2,
         });
-      }
-    }
-  });
 
-  socket.on("close", () => console.log("[Diva] Python client disconnected"));
-  socket.on("error", (err) => console.error("[Diva] Socket error:", err.message));
+        if (!recorded.has_speech || !recorded.wav_base64) {
+            if (!isFirstTurn) {
+                console.log("[FOLLOW-UP] Silence, fin de conversation");
+                break;
+            }
+            console.log("[REC] Pas de parole détectée, retour au wake word");
+            break;
+        }
+
+        console.log(`[REC] Audio capturé : ${recorded.duration_ms}ms`);
+
+        // --- TRANSCRIRE ---
+        const wavBuffer = Buffer.from(recorded.wav_base64, "base64");
+        const transcription = await transcribeLocal(wavBuffer);
+
+        if (!transcription || transcription.trim().length === 0) {
+            console.log("[STT] Transcription vide");
+            if (!isFirstTurn) continue;
+            break;
+        }
+
+        console.log(`[STT] "${transcription}"`);
+
+        // --- DÉTECTER FIN DE CONVERSATION ---
+        if (containsGoodbye(transcription)) {
+            console.log("[END] Goodbye détecté");
+            await playAudioFile(`${ASSETS_DIR}/goodbye.wav`);
+            break;
+        }
+
+        // --- TRAITER ---
+        await handleTranscription(transcription);
+
+        // --- FOLLOW-UP ? ---
+        if (!FOLLOW_UP_ENABLED) break;
+        isFirstTurn = false;
+
+        // Notification follow-up
+        await playAudioFile(`${ASSETS_DIR}/thinking.wav`);
+    }
+
+    console.log("[CONV] Fin de conversation, retour au wake word\n");
 }
 
-async function handleAudio(socket: net.Socket, b64Audio: string): Promise<void> {
-  const wavBuffer = Buffer.from(b64Audio, "base64");
-  console.log(`[Diva] Received audio: ${wavBuffer.length} bytes`);
+async function handleTranscription(transcription: string): Promise<void> {
+    // await addMemory( transcription);
 
-  console.log("[Diva] Transcribing...");
-  const transcription = await transcribeLocal(wavBuffer);
-  console.log(`[Diva] Transcription: "${transcription}"`);
+    // --- CLASSIFIER L'INTENT ---
+    const intent = await classifyIntent(transcription);
+    console.log(`[INTENT] ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
 
-  if (!transcription.trim()) {
-    sendJson(socket, { type: "error", message: "empty transcription" });
-    return;
-  }
-
-  await memory.addMessage("user", transcription);
-
-  // Route intent
-  const intent = await classifyIntent(transcription);
-  console.log(`[Diva] Intent: ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
-
-  if (intent.intent === "local_simple") {
-    const local = await handleLocalIntent(intent.category, transcription);
-    if (local.handled && local.response) {
-      console.log(`[Diva] Local response: "${local.response}"`);
-      await memory.addMessage("assistant", local.response);
-      // Single sentence — send directly as speak
-      sendJson(socket, { type: "speak", text: local.response });
-      sendJson(socket, { type: "play_done" });
-      return;
+    // --- RÉPONSES LOCALES (instantanées) ---
+    if (intent.intent === "local_simple") {
+        const local = await handleLocalIntent(intent.category, transcription);
+        if (local.handled && local.response) {
+            console.log(`[LOCAL] "${local.response}"`);
+            await addMemory(local.response);
+            await speakTTS(local.response);
+            return;
+        }
+        console.log("[LOCAL] Handler declined, falling back to Claude...");
     }
-    console.log("[Diva] Local handler declined, falling back to Claude...");
-  }
 
-  // Streaming Claude response — TTS each sentence as it arrives
-  console.log("[Diva] Asking Claude (streaming)...");
-  let isFirstSent = false;
-
-  const fullResponse = await claude.chatStreaming(
-    transcription,
-    (sentence: string, isFirst: boolean) => {
-      if (isFirst) {
-        console.log(`[Diva] First sentence: "${sentence}"`);
-        sendJson(socket, { type: "speak", text: sentence });
-        isFirstSent = true;
-      } else {
-        console.log(`[Diva] Queue sentence: "${sentence}"`);
-        sendJson(socket, { type: "speak_queue", text: sentence });
-      }
+    // --- FILLER PENDANT GÉNÉRATION ---
+    const filler = chooseFiller(intent.category, transcription);
+    if (filler.primary) {
+        // Jouer le filler en parallèle avec le lancement de Claude
+        playAudioFile(filler.primary).catch(() => {});
     }
-  );
 
-  // Fallback if streaming produced nothing
-  if (!fullResponse || fullResponse.trim().length === 0) {
-    const fallback = "Desole, je n ai pas pu repondre.";
-    console.warn("[Diva] Empty streaming response, using fallback");
-    sendJson(socket, { type: "speak", text: fallback });
-    // fallback sent
-  }
+    // --- CLAUDE STREAMING ---
+    console.log("[CLAUDE] Asking (streaming)...");
+    let isFirstSentence = true;
+    const sentences: string[] = [];
 
-  console.log(`[Diva] Full response: "${fullResponse}"`);
-  await memory.addMessage("assistant", fullResponse);
+    const fullResponse = await claude.chatStreaming(
+        transcription,
+        async (sentence: string, isFirst: boolean) => {
+            sentences.push(sentence);
+            if (isFirst) {
+                console.log(`[CLAUDE] First: "${sentence}"`);
+            } else {
+                console.log(`[CLAUDE] Queue: "${sentence}"`);
+            }
+        }
+    );
 
-  // Signal end of response
-  sendJson(socket, { type: "play_done" });
+    // Jouer chaque phrase séquentiellement
+    for (const sentence of sentences) {
+        await speakTTS(sentence);
+    }
+
+    // Fallback si rien généré
+    if (!fullResponse || fullResponse.trim().length === 0) {
+        const fallback = "Désolé, je n'ai pas pu répondre.";
+        console.warn("[CLAUDE] Empty response, using fallback");
+        await speakTTS(fallback);
+        await addMemory(fallback);
+        return;
+    }
+
+    console.log(`[CLAUDE] Full: "${fullResponse}"`);
+    await addMemory(fullResponse);
 }
 
-function sendJson(socket: net.Socket, data: Record<string, unknown>): void {
-  const msg = JSON.stringify(data) + "\n";
-  socket.write(msg);
-}
+// =====================================================================
+// MAIN
+// =====================================================================
 
-// --- Main ---
 async function main(): Promise<void> {
-  console.log("[Diva] Starting STREAMING mode...");
-  await init();
+    console.log("[DIVA] Starting HTTP Architecture...");
+    await init();
 
-  const server = net.createServer(handleConnection);
-
-  try { execSync("pkill -9 -f wakeword_server || true", { timeout: 3000 }); } catch {}
-  try { execSync("pkill -9 arecord || true", { timeout: 3000 }); } catch {}
-  try { execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 3000 }); } catch {}
-  console.log("[Diva] Cleaned up old processes");
-
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  server.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(`[Diva] Port ${PORT} still in use. Retrying in 2s...`);
-      setTimeout(() => {
-        server.close();
-        server.listen(PORT, HOST);
-      }, 2000);
-    } else {
-      console.error("[Diva] Server error:", err);
+    // Vérifier que le serveur audio est prêt
+    console.log("[INIT] Vérification du serveur audio (port 9010)...");
+    let retries = 0;
+    while (!(await checkHealth())) {
+        retries++;
+        if (retries > 30) {
+            console.error("[INIT] ❌ Serveur audio non disponible après 30 tentatives");
+            process.exit(1);
+        }
+        console.log(`[INIT] En attente du serveur audio... (${retries}/30)`);
+        await sleep(2000);
     }
-  });
+    console.log("[INIT] ✅ Serveur audio connecté");
 
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Cleanup
+    try { execSync("pkill -9 arecord || true", { timeout: 3000 }); } catch {}
+    console.log("[INIT] Cleaned up old processes");
 
-  server.listen(PORT, HOST, () => {
-    console.log(`[Diva] TCP server listening on ${HOST}:${PORT}`);
-    console.log("[Diva] Starting Python wakeword process...");
-
-    const pythonProc = spawn("/opt/npu-env/bin/python", ["python/wakeword_server.py"], {
-      stdio: ["ignore", "inherit", "inherit"],
-      cwd: process.cwd(),
-    });
-
-    pythonProc.on("error", (err) => console.error("[Diva] Python error:", err.message));
-    pythonProc.on("close", (code) => {
-      console.log(`[Diva] Python exited with code ${code}`);
-      if (code !== 0) process.exit(1);
-    });
-
-    const shutdown = () => {
-      console.log("\n[Diva] Shutting down...");
-      pythonProc.kill("SIGTERM");
-      server.close();
-      setTimeout(() => process.exit(0), 2000);
-    };
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  });
+    // Boucle principale
+    console.log("[DIVA] ✅ Ready!");
+    while (true) {
+        try {
+            await idleLoop();
+        } catch (error) {
+            console.error("[MAIN] Error:", error);
+            await sleep(2000);
+        }
+    }
 }
+
+// Graceful shutdown
+const shutdown = () => {
+    console.log("\n[DIVA] Shutting down...");
+    process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 main().catch((err) => {
-  console.error("[Diva] Fatal error:", err);
-  process.exit(1);
+    console.error("[DIVA] Fatal error:", err);
+    process.exit(1);
 });

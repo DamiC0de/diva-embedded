@@ -170,6 +170,48 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"[Mem0] GetAll error: {e}")
                 self._respond(200, {"memories": []})
         
+
+        elif self.path == '/memory/delete':
+            # Delete a specific memory by ID
+            memory_id = body.get('memory_id', '')
+            
+            if memory is None:
+                self._respond(500, {"error": "Mem0 not initialized"})
+                return
+            
+            if not memory_id:
+                self._respond(400, {"error": "No memory_id provided"})
+                return
+            
+            try:
+                memory.delete(memory_id)
+                print(f"[Mem0] Deleted memory: {memory_id}")
+                self._respond(200, {"status": "deleted", "id": memory_id})
+            except Exception as e:
+                print(f"[Mem0] Delete error: {e}")
+                self._respond(500, {"error": str(e)})
+        
+        elif self.path == '/memory/update':
+            # Update a specific memory
+            memory_id = body.get('memory_id', '')
+            new_text = body.get('text', '')
+            
+            if memory is None:
+                self._respond(500, {"error": "Mem0 not initialized"})
+                return
+            
+            if not memory_id or not new_text:
+                self._respond(400, {"error": "Need memory_id and text"})
+                return
+            
+            try:
+                memory.update(memory_id, new_text)
+                print(f"[Mem0] Updated memory {memory_id}: {new_text}")
+                self._respond(200, {"status": "updated", "id": memory_id})
+            except Exception as e:
+                print(f"[Mem0] Update error: {e}")
+                self._respond(500, {"error": str(e)})
+
         elif self.path == '/speaker/identify':
             # Identify speaker from audio
             if speaker_model is None:
