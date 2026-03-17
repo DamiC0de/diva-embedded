@@ -123,7 +123,7 @@ async function conversationLoop() {
             break;
         isFirstTurn = false;
         // Notification follow-up
-        await playAudioFile(`${ASSETS_DIR}/thinking.wav`);
+        playAudioFile(`${ASSETS_DIR}/thinking.wav`).catch(() => {});
     }
     console.log("[CONV] Fin de conversation, retour au wake word\n");
 }
