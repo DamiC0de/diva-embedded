@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diva — Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+      --text: #e4e4e7; --muted: #71717a; --accent: #818cf8;
+      --green: #4ade80; --red: #f87171; --orange: #fb923c; --blue: #60a5fa;
+    }
+    body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
+    h1 { font-size: 1.5rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    h1 span { color: var(--accent); }
+    h2 { font-size: 1rem; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .stat:last-child { border-bottom: none; }
+    .stat-label { color: var(--muted); font-size: 0.85rem; }
+    .stat-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-ok { background: rgba(74,222,128,0.15); color: var(--green); }
+    .badge-down { background: rgba(248,113,113,0.15); color: var(--red); }
+    .badge-warn { background: rgba(251,146,60,0.15); color: var(--orange); }
+    .services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    .service-item { padding: 8px; border-radius: 6px; border: 1px solid var(--border); text-align: center; }
+    .service-name { font-size: 0.75rem; color: var(--muted); }
+    .service-status { font-size: 0.85rem; font-weight: 600; margin-top: 2px; }
+    .service-latency { font-size: 0.7rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; color: var(--muted); padding: 8px; border-bottom: 2px solid var(--border); font-weight: 500; }
+    td { padding: 8px; border-bottom: 1px solid var(--border); }
+    .log-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .log-intent { font-family: monospace; font-size: 0.75rem; }
+    .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    button { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: var(--border); }
+    button.danger { background: var(--red); }
+    .sound-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .sound-row:last-child { border-bottom: none; }
+    .sound-label { flex: 1; }
+    .sound-desc { font-size: 0.75rem; color: var(--muted); }
+    .sound-file { font-family: monospace; font-size: 0.8rem; color: var(--blue); }
+    input[type="file"] { font-size: 0.8rem; }
+    .upload-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .temp-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+    .temp-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+    .dnd-toggle { display: flex; align-items: center; gap: 12px; }
+    .toggle { width: 44px; height: 24px; background: var(--border); border-radius: 12px; position: relative; cursor: pointer; transition: background 0.3s; }
+    .toggle.active { background: var(--accent); }
+    .toggle::after { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.3s; }
+    .toggle.active::after { transform: translateX(20px); }
+
+    .svc-controls { display: flex; gap: 6px; margin-top: 8px; }
+    .svc-controls button { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; }
+    .svc-btn-start { background: var(--green); }
+    .svc-btn-stop { background: var(--red); }
+    .svc-btn-restart { background: var(--orange); }
+    .global-controls { display: flex; gap: 8px; margin: 12px 0; }
+    .svc-detail { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .svc-detail:last-child { border-bottom: none; }
+    .svc-info { display: flex; flex-direction: column; gap: 2px; }
+    .svc-meta { font-size: 0.7rem; color: var(--muted); }
+    .refresh-info { font-size: 0.7rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1><span>Diva</span> Dashboard</h1>
+  <p class="refresh-info" id="lastUpdate">Auto-refresh every 5s</p>
+
+  <div class="grid">
+    <!-- Services Status & Control -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Services</h2>
+      <div class="global-controls">
+        <button class="svc-btn-start" onclick="startAll()">Demarrer tout</button>
+        <button class="svc-btn-stop" onclick="stopAll()">Arreter tout</button>
+        <button class="svc-btn-restart" onclick="restartService('diva-server')">Redemarrer Diva</button>
+      </div>
+      <div id="servicesList"></div>
+    </div>
+
+    <!-- System Metrics -->
+    <div class="card">
+      <h2>System</h2>
+      <div id="metrics">
+        <div class="stat"><span class="stat-label">CPU Temp</span><span class="stat-value" id="cpuTemp">--</span></div>
+        <div class="stat"><span class="stat-label">Load (1/5/15)</span><span class="stat-value" id="cpuLoad">--</span></div>
+        <div class="stat"><span class="stat-label">RAM</span><span class="stat-value" id="ramUsage">--</span></div>
+        <div class="stat"><span class="stat-label">Disk</span><span class="stat-value" id="diskUsage">--</span></div>
+        <div class="stat"><span class="stat-label">NPU</span><span class="stat-value" id="npuStatus">--</span></div>
+        <div class="stat"><span class="stat-label">Uptime</span><span class="stat-value" id="uptime">--</span></div>
+      </div>
+    </div>
+
+    <!-- Active Timers -->
+    <div class="card">
+      <h2>Timers</h2>
+      <div id="timers"><span class="stat-label">No active timers</span></div>
+    </div>
+
+    <!-- DND Mode -->
+    <div class="card">
+      <h2>Mode Ne Pas Deranger</h2>
+      <div class="dnd-toggle">
+        <div class="toggle" id="dndToggle" onclick="toggleDND()"></div>
+        <span id="dndLabel">Inactif</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sounds Management -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Sons Systeme</h2>
+    <div id="sounds"></div>
+    <div class="upload-form">
+      <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="soundFile" accept=".wav" />
+        <button type="submit">Upload WAV</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Personas -->  <div class="card" style="margin-bottom: 16px;">    <h2>Personas</h2>    <div id="personas"><span class="stat-label">Loading...</span></div>  </div>  <!-- Health / Elderly -->  <div class="grid">    <div class="card">      <h2>Medicaments</h2>      <div id="medCompliance"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Questions Repetees</h2>      <div id="repetitions"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Radio</h2>      <div id="radioStatus"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Liste de Courses</h2>      <div id="shoppingList"><span class="stat-label">Loading...</span></div>    </div>  </div>  <!-- Routines -->  <div class="card" style="margin-bottom: 16px;">    <h2>Routines</h2>    <div id="routines"><span class="stat-label">Loading...</span></div>  </div>
+  <!-- Interaction Logs -->
+  <div class="card">
+    <h2>Interactions Recentes</h2>
+    <table>
+      <thead>
+        <tr><th>Heure</th><th>Locuteur</th><th>Transcription</th><th>Intent</th><th>Reponse</th><th>Latence</th></tr>
+      </thead>
+      <tbody id="logsBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API = '';
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(`${API}/api/status`);
+        const data = await res.json();
+        renderServices(data.services);
+        renderMetrics(data.metrics);
+      } catch (e) { console.error('Status fetch error:', e); }
+    }
+
+    async function fetchLogs() {
+      try {
+        const res = await fetch(`${API}/api/logs?limit=50`);
+        const data = await res.json();
+        renderLogs(data.logs);
+      } catch (e) { console.error('Logs fetch error:', e); }
+    }
+
+    async function fetchTimers() {
+      try {
+        const res = await fetch(`${API}/api/timers`);
+        const data = await res.json();
+        renderTimers(data.timers);
+      } catch (e) { console.error('Timers fetch error:', e); }
+    }
+
+    async function fetchSounds() {
+      try {
+        const res = await fetch(`${API}/api/sounds`);
+        const data = await res.json();
+        renderSounds(data.sounds);
+      } catch (e) { console.error('Sounds fetch error:', e); }
+    }
+
+    async function fetchDND() {
+      try {
+        const res = await fetch(`${API}/api/dnd`);
+        const data = await res.json();
+        renderDND(data);
+      } catch (e) { console.error('DND fetch error:', e); }
+    }
+
+    function renderServices(services) {
+      const el = document.getElementById('services');
+      el.innerHTML = Object.entries(services).map(([name, info]) => {
+        const cls = info.status === 'ok' ? 'badge-ok' : 'badge-down';
+        return `<div class="service-item">
+          <div class="service-name">${name}</div>
+          <div class="service-status"><span class="badge ${cls}">${info.status}</span></div>
+          <div class="service-latency">${info.latencyMs}ms</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderMetrics(m) {
+      if (m.error) return;
+      const tempColor = m.cpu.tempC > 70 ? 'var(--red)' : m.cpu.tempC > 55 ? 'var(--orange)' : 'var(--green)';
+      document.getElementById('cpuTemp').innerHTML = `<span style="color:${tempColor}">${m.cpu.tempC}°C</span>`;
+      document.getElementById('cpuLoad').textContent = `${m.cpu.load1m} / ${m.cpu.load5m} / ${m.cpu.load15m}`;
+      document.getElementById('ramUsage').textContent = `${m.memory.usedMB}/${m.memory.totalMB} MB (${m.memory.usedPercent}%)`;
+      document.getElementById('diskUsage').textContent = `${m.disk.used}/${m.disk.total} (${m.disk.usedPercent})`;
+      document.getElementById('npuStatus').innerHTML = m.npu.active
+        ? '<span class="badge badge-ok">Active</span>'
+        : '<span class="badge badge-warn">Idle</span>';
+      document.getElementById('uptime').textContent = m.uptime;
+    }
+
+    function renderTimers(timers) {
+      const el = document.getElementById('timers');
+      if (!timers || timers.length === 0) {
+        el.innerHTML = '<span class="stat-label">Aucun minuteur en cours</span>';
+        return;
+      }
+      el.innerHTML = timers.map(t => {
+        const min = Math.floor(t.remainingS / 60);
+        const sec = t.remainingS % 60;
+        return `<div class="stat">
+          <span class="stat-label">${t.label}${t.message ? ` — ${t.message}` : ''}</span>
+          <span class="stat-value">${min}m ${sec}s</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderSounds(sounds) {
+      const el = document.getElementById('sounds');
+      el.innerHTML = Object.entries(sounds).map(([slot, info]) => {
+        return `<div class="sound-row">
+          <div class="sound-label">
+            <div>${info.description}</div>
+            <div class="sound-desc">${slot}</div>
+          </div>
+          <div class="sound-file">${info.currentFile}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderDND(data) {
+      const toggle = document.getElementById('dndToggle');
+      const label = document.getElementById('dndLabel');
+      if (data.active) {
+        toggle.classList.add('active');
+        label.textContent = `Actif (${data.remainingMin} min restantes)`;
+      } else {
+        toggle.classList.remove('active');
+        label.textContent = 'Inactif';
+      }
+    }
+
+    async function toggleDND() {
+      const toggle = document.getElementById('dndToggle');
+      const isActive = toggle.classList.contains('active');
+      await fetch(`${API}/api/dnd`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: !isActive, durationMin: 480 }),
+      });
+      fetchDND();
+    }
+
+    function renderLogs(logs) {
+      const tbody = document.getElementById('logsBody');
+      tbody.innerHTML = logs.reverse().map(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString('fr-FR');
+        const truncResp = (log.response || '').substring(0, 80) + ((log.response || '').length > 80 ? '...' : '');
+        return `<tr>
+          <td class="log-time">${time}</td>
+          <td>${log.speaker || '-'}</td>
+          <td>${log.transcription || '-'}</td>
+          <td class="log-intent"><span class="badge ${log.intent === 'local' ? 'badge-ok' : 'badge-warn'}">${log.category}</span></td>
+          <td>${truncResp}</td>
+          <td class="log-time">${log.latencyMs || '-'}ms</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Upload handler
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = document.getElementById('soundFile').files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      await fetch(`${API}/api/sounds/upload`, { method: 'POST', body: form });
+      fetchSounds();
+    setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);
+      document.getElementById('soundFile').value = '';
+    });
+
+    // Initial fetch + auto-refresh
+    async function fetchPersonas() {
+      try {
+        const res = await fetch(API + "/api/personas");
+        const data = await res.json();
+        const el = document.getElementById("personas");
+        if (!data.personas || data.personas.length === 0) {
+          el.innerHTML = "<span class=\"stat-label\">Aucune persona configuree</span>";
+          return;
+        }
+        el.innerHTML = data.personas.map(p => 
+          `<div class="stat"><span class="stat-label">${p.name} (${p.type})</span><span class="stat-value">${p.greetingName || p.id}</span></div>`
+        ).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchHealth() {
+      try {
+        const [medRes, repRes, radioRes, shopRes] = await Promise.all([
+          fetch(API + "/api/health/medications"),
+          fetch(API + "/api/health/repetitions"),
+          fetch(API + "/api/radio"),
+          fetch(API + "/api/shopping"),
+        ]);
+        const med = await medRes.json();
+        const rep = await repRes.json();
+        const radio = await radioRes.json();
+        const shop = await shopRes.json();
+
+        document.getElementById("medCompliance").innerHTML = 
+          `<div class="stat"><span class="stat-label">Compliance 7j</span><span class="stat-value">${med.compliance}%</span></div>
+           <div class="stat"><span class="stat-label">Prises cette semaine</span><span class="stat-value">${med.log?.length || 0}</span></div>`;
+
+        document.getElementById("repetitions").innerHTML = 
+          `<div class="stat"><span class="stat-label">Repetitions 7j</span><span class="stat-value">${rep.totalRepetitions || 0}</span></div>
+           <div class="stat"><span class="stat-label">Questions uniques</span><span class="stat-value">${rep.uniqueQuestions || 0}</span></div>`;
+
+        document.getElementById("radioStatus").innerHTML = radio.playing
+          ? `<div class="stat"><span class="stat-label">En cours</span><span class="stat-value badge badge-ok">${radio.station}</span></div>`
+          : "<span class=\"stat-label\">Aucune radio en cours</span>";
+
+        const items = shop.items || [];
+        document.getElementById("shoppingList").innerHTML = items.length === 0
+          ? "<span class=\"stat-label\">Liste vide</span>"
+          : items.map(i => `<div class="stat"><span class="stat-label">${i.name}</span><span class="stat-value" style="color:var(--muted);font-size:0.75rem">${i.addedBy}</span></div>`).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchRoutines() {
+      try {
+        const res = await fetch(API + "/api/routines");
+        const data = await res.json();
+        const el = document.getElementById("routines");
+        if (!data.routines || data.routines.length === 0) {
+          el.innerHTML = "<span class=\"stat-label\">Aucune routine configuree</span>";
+          return;
+        }
+        el.innerHTML = data.routines.map(r =>
+          `<div class="stat"><span class="stat-label">${r.name} — ${r.description}</span><span class="stat-value">${r.actions.length} actions</span></div>`
+        ).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchServiceList() {
+      try {
+        const res = await fetch(API + '/api/services/list');
+        const data = await res.json();
+        renderServiceList(data.services);
+      } catch(e) { console.error('Services list error:', e); }
+    }
+
+    function renderServiceList(services) {
+      const el = document.getElementById('servicesList');
+      el.innerHTML = Object.entries(services).map(([name, info]) => {
+        const statusCls = info.active === 'active' ? 'badge-ok' : 'badge-down';
+        const memMB = info.memory !== '-' && info.memory !== '[not set]' ? (parseInt(info.memory) / 1048576).toFixed(1) + ' MB' : '-';
+        return '<div class="svc-detail">' +
+          '<div class="svc-info">' +
+            '<div><strong>' + name + '</strong> <span class="badge ' + statusCls + '">' + info.active + '</span></div>' +
+            '<div class="svc-meta">PID: ' + info.pid + ' | RAM: ' + memMB + ' | Uptime: ' + info.uptime + '</div>' +
+          '</div>' +
+          '<div class="svc-controls">' +
+            '<button class="svc-btn-start" onclick="svcAction(\'' + name + '\', \'start\')">Start</button>' +
+            '<button class="svc-btn-stop" onclick="svcAction(\'' + name + '\', \'stop\')">Stop</button>' +
+            '<button class="svc-btn-restart" onclick="svcAction(\'' + name + '\', \'restart\')">Restart</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function svcAction(service, action) {
+      try {
+        await fetch(API + '/api/services/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ service, action }),
+        });
+        setTimeout(fetchServiceList, 1500);
+      } catch(e) { console.error('Service action error:', e); }
+    }
+
+    async function stopAll() {
+      if (!confirm('Arreter tous les services Diva ?')) return;
+      await fetch(API + '/api/services/kill-all', { method: 'POST' });
+      setTimeout(fetchServiceList, 2000);
+    }
+
+    async function startAll() {
+      await fetch(API + '/api/services/start-all', { method: 'POST' });
+      setTimeout(fetchServiceList, 3000);
+    }
+
+    async function restartService(name) {
+      await svcAction(name, 'restart');
+    }
+
+    function refreshAll() {
+      fetchStatus();
+      fetchLogs();
+      fetchTimers();
+      fetchDND();
+      document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString('fr-FR')} — auto-refresh 5s`;
+    }
+
+    refreshAll();
+    fetchServiceList();
+    fetchPersonas();
+    fetchHealth();
+    fetchRoutines();
+    fetchSounds();
+    setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);
+    setInterval(refreshAll, 5000);
+    setInterval(fetchServiceList, 10000);
+  </script>
+</body>
+</html>

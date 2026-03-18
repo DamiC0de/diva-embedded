@@ -1,0 +1,1 @@
+{"version":3,"file":"dnd-manager.d.ts","sourceRoot":"","sources":["../../src/tools/dnd-manager.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAMH,wBAAgB,SAAS,CAAC,UAAU,GAAE,MAA2B,GAAG,IAAI,CAcvE;AAED,wBAAgB,UAAU,IAAI,IAAI,CAQjC;AAED,wBAAgB,WAAW,IAAI,OAAO,CAErC;AAED,wBAAgB,YAAY,IAAI;IAAE,MAAM,EAAE,OAAO,CAAC;IAAC,OAAO,EAAE,MAAM,CAAC;IAAC,YAAY,EAAE,MAAM,CAAA;CAAE,CAMzF"}

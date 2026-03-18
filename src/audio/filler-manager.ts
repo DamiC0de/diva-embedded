@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const CACHE_DIR = path.join(__dirname, '../../assets/cached-responses');
 
@@ -10,7 +14,7 @@ export function loadFillers(): void {
     console.warn('[FILLERS] Cache dir not found:', CACHE_DIR);
     return;
   }
-  
+
   const categories = fs.readdirSync(CACHE_DIR)
     .filter(d => d.endsWith('-fillers'))
     .filter(d => fs.statSync(path.join(CACHE_DIR, d)).isDirectory());

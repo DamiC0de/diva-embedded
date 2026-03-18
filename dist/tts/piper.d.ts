@@ -1,12 +1,7 @@
 /**
  * Synthesize text to WAV via Piper TTS HTTP server.
- * Returns the raw WAV buffer.
+ * Adapts speed based on current persona's TTS config.
  */
-export declare function synthesize(text: string): Promise<Buffer>;
-/**
- * Synthesize text and save as WAV file.
- * @param text - Text to speak
- * @param outputPath - Path to save WAV file
- */
+export declare function synthesize(text: string, lengthScaleOverride?: number): Promise<Buffer>;
 export declare function synthesizeToFile(text: string, outputPath: string): Promise<void>;
 //# sourceMappingURL=piper.d.ts.map

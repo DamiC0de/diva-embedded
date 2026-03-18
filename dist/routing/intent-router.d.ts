@@ -1,9 +1,11 @@
 /**
- * Intent Router v2 — calls local keyword classifier on port 8882
+ * Intent Router v3 — calls local keyword classifier on port 8882
  * Routes simple queries locally, complex ones to Claude
+ *
+ * v3.1: Added joke handler, reminder support, DND mode
  */
 interface IntentResult {
-    intent: "local_simple" | "home_control" | "complex";
+    intent: string;
     category: string;
     confidence: number;
     latency_ms: number;

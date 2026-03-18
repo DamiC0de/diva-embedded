@@ -140,7 +140,7 @@ export async function identifySpeaker(audioB64) {
         const confidence = data.confidence || 0;
         console.log(`[Memory] Speaker identified: ${speaker} (confidence: ${confidence})`);
         // Auto-switch user if confident
-        if (speaker !== "unknown" && confidence > 0.3) {
+        if (speaker !== "unknown" && confidence > 0.6) {
             setCurrentUser(speaker);
         }
         return speaker;

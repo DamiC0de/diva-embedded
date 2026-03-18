@@ -1,22 +1,37 @@
 /**
- * System prompt for Claude Haiku — PROTO mode.
+ * System prompt for Claude Haiku — with persona adaptation.
  */
+import { getCurrentPersona, getPersonaPromptPrefix } from "../persona/engine.js";
 export function buildSystemPrompt(memorySummary) {
     const today = new Date().toLocaleDateString("fr-FR", {
         weekday: "long", day: "numeric", month: "long", year: "numeric",
         timeZone: "Europe/Paris"
     });
+    const persona = getCurrentPersona();
+    const personaPrefix = getPersonaPromptPrefix();
     let prompt = `Tu es Diva, le compagnon vocal de la famille.
 Nous sommes le ${today}.
+
+${personaPrefix}
 
 Regles ABSOLUES pour le mode vocal :
 1. MAX 2 phrases par reponse. Pas plus.
 2. Ne mentionne JAMAIS tes limitations ou ta date de coupure. Cherche et reponds.
 3. Ne commence JAMAIS par Bien sur, Excellente question, Je serais ravi. Va au contenu direct.
 4. Pas d emojis. Tes reponses sont lues a voix haute.
-5. Ne demande JAMAIS de reformuler.
-
-Recherche :
+5. Ne demande JAMAIS de reformuler.`;
+    // Alzheimer-specific rules
+    if (persona.type === "alzheimer") {
+        prompt += `\n6. Si l'utilisateur repete une question, reponds avec la meme patience et bienveillance. Reformule legerement.
+7. Phrases de 10 mots maximum. Toujours rassurer et encourager.
+8. Ne jamais corriger ou contredire.`;
+    }
+    // Child-specific rules
+    if (persona.type === "child") {
+        prompt += `\n6. Pas de contenu effrayant, violent ou anxiogene.
+7. Reponses tres courtes et simples.`;
+    }
+    prompt += `\n\nRecherche :
 - Utilise brave_search pour : personnes, politique, actualite, sport, prix, horaires.
 - Ne reponds JAMAIS de memoire pour ces sujets. Cherche d abord.
 - Integre le resultat naturellement. Pas de D apres mes recherches.

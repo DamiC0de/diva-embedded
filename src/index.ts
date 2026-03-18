@@ -3,7 +3,6 @@
  * 
  * Node.js est l'orchestrateur principal.
  * Python (FastAPI sur port 9010) exécute les opérations audio.
- * Plus de protocole TCP bidirectionnel fragile.
  */
 
 import "dotenv/config";
@@ -24,19 +23,28 @@ import {
     handleMemoryWrite,
     getMemorySummary,
     addMemory,
+    identifySpeaker,
 } from "./tools/memory-tool.js";
 import { chooseFiller } from "./audio/filler-manager.js";
+import { isDNDActive } from "./tools/dnd-manager.js";
+import { setAudioBusy } from "./audio/audio-lock.js";
 import { synthesize } from "./tts/piper.js";
+import { setCurrentPersona, isIntentAllowed, loadPersonas } from "./persona/engine.js";
+import { runVoiceRegistration, completeRegistration } from "./persona/registration.js";
+import { startDashboard, logInteraction } from "./dashboard/server.js";
+import { startHAWebhookServer } from "./smarthome/ha-notifications.js";
+import { startMedicationScheduler } from "./elderly/medication-manager.js";
+import { startProactiveScheduler, trackInteraction, trackRepeatedQuestion } from "./elderly/proactive-scheduler.js";
+import { isDistressPhrase, handleDistress } from "./elderly/distress-detector.js";
+import { checkRepetition } from "./elderly/repetition-tracker.js";
 
 // =====================================================================
 // CONFIG
 // =====================================================================
 
 const FOLLOW_UP_ENABLED = true;
-const FOLLOW_UP_TIMEOUT_S = 5;
 const ASSETS_DIR = "/opt/diva-embedded/assets";
 
-// Goodbye phrases pour détecter fin de conversation
 const GOODBYE_PHRASES = [
     "bonne nuit", "au revoir", "à plus", "salut", "ciao",
     "j'ai fini", "c'est bon", "merci c'est tout", "ça ira"
@@ -61,6 +69,13 @@ async function init(): Promise<void> {
     if (memorySummary) {
         claude.setMemorySummary(memorySummary);
     }
+
+    // Start dashboard server
+    startDashboard();
+    loadPersonas();
+    startMedicationScheduler();
+    startProactiveScheduler();
+    startHAWebhookServer();
 }
 
 // =====================================================================
@@ -77,7 +92,7 @@ function containsGoodbye(text: string): boolean {
 }
 
 // =====================================================================
-// TTS
+// TTS — Streaming pipeline
 // =====================================================================
 
 async function speakTTS(text: string): Promise<void> {
@@ -90,6 +105,38 @@ async function speakTTS(text: string): Promise<void> {
     }
 }
 
+async function speakTTSStreaming(sentenceQueue: AsyncIterable<string>): Promise<void> {
+    let nextWavPromise: Promise<Buffer> | null = null;
+
+    for await (const sentence of sentenceQueue) {
+        if (sentence.trim().length <= 3) continue;
+
+        if (nextWavPromise) {
+            const wavBuffer = await nextWavPromise;
+            // Start synthesizing NEXT sentence before playing current
+            nextWavPromise = synthesize(sentence);
+            try {
+                await playAudioBytes(wavBuffer.toString("base64"));
+            } catch (err) {
+                console.error("[TTS-STREAM] Play error:", err);
+            }
+        } else {
+            // First sentence — just start synthesis
+            nextWavPromise = synthesize(sentence);
+        }
+    }
+
+    // Play the last sentence
+    if (nextWavPromise) {
+        try {
+            const wavBuffer = await nextWavPromise;
+            await playAudioBytes(wavBuffer.toString("base64"));
+        } catch (err) {
+            console.error("[TTS-STREAM] Final play error:", err);
+        }
+    }
+}
+
 // =====================================================================
 // MAIN LOOPS
 // =====================================================================
@@ -97,31 +144,34 @@ async function speakTTS(text: string): Promise<void> {
 async function idleLoop(): Promise<void> {
     console.log("\n[IDLE] En attente du wake word...");
 
-    // Attendre "Diva"
+    if (isDNDActive()) {
+        console.log("[IDLE] DND mode active, skipping...");
+        setAudioBusy(false);
+        await sleep(5000);
+        return;
+    }
+
+    setAudioBusy(true);
     const wakeword = await waitForWakeword();
-    if (!wakeword.detected) return;
+    if (!wakeword.detected) {
+        setAudioBusy(false);
+        return;
+    }
 
     console.log(`[WAKEWORD] Détecté ! Score: ${wakeword.score.toFixed(3)}`);
-
-    // Jouer le chime de confirmation
     await playAudioFile(`${ASSETS_DIR}/oui.wav`);
-
-    // Entrer en mode conversation
     await conversationLoop();
+    setAudioBusy(false);
 }
 
 async function conversationLoop(): Promise<void> {
     let isFirstTurn = true;
-    let turnCount = 0;
 
     while (true) {
-        turnCount++;
-
-        // --- ENREGISTRER ---
         console.log("[REC] Enregistrement en cours...");
         const recorded = await recordAudio({
             maxDurationS: 10,
-            silenceTimeoutS: isFirstTurn ? 1.5 : 1.2,
+            silenceTimeoutS: isFirstTurn ? 1.2 : 0.8,
         });
 
         if (!recorded.has_speech || !recorded.wav_base64) {
@@ -135,9 +185,15 @@ async function conversationLoop(): Promise<void> {
 
         console.log(`[REC] Audio capturé : ${recorded.duration_ms}ms`);
 
-        // --- TRANSCRIRE ---
         const wavBuffer = Buffer.from(recorded.wav_base64, "base64");
-        const transcription = await transcribeLocal(wavBuffer);
+        const [transcription, speaker] = await Promise.all([
+            transcribeLocal(wavBuffer),
+            identifySpeaker(recorded.wav_base64).catch(() => "unknown"),
+        ]);
+        if (speaker && speaker !== "unknown") {
+            console.log(`[SPEAKER] Identifié: ${speaker}`);
+            setCurrentPersona(speaker);
+        }
 
         if (!transcription || transcription.trim().length === 0) {
             console.log("[STT] Transcription vide");
@@ -147,76 +203,129 @@ async function conversationLoop(): Promise<void> {
 
         console.log(`[STT] "${transcription}"`);
 
-        // --- DÉTECTER FIN DE CONVERSATION ---
+        // --- DISTRESS DETECTION (priority) ---
+        if (isDistressPhrase(transcription)) {
+            console.log("[DISTRESS] Detected!");
+            const response = await handleDistress(transcription);
+            await speakTTS(response);
+            break;
+        }
         if (containsGoodbye(transcription)) {
             console.log("[END] Goodbye détecté");
             await playAudioFile(`${ASSETS_DIR}/goodbye.wav`);
             break;
         }
 
-        // --- TRAITER ---
-        await handleTranscription(transcription);
+        // Handle voice registration flow
+        if (/enregistre.*voix|apprends.*voix|m.morise.*voix/i.test(transcription)) {
+            await handleVoiceRegistrationFlow();
+            break;
+        }
+        await handleTranscription(transcription, speaker);
 
-        // --- FOLLOW-UP ? ---
         if (!FOLLOW_UP_ENABLED) break;
         isFirstTurn = false;
-
-        // Notification follow-up
         await playAudioFile(`${ASSETS_DIR}/thinking.wav`);
     }
 
     console.log("[CONV] Fin de conversation, retour au wake word\n");
 }
 
-async function handleTranscription(transcription: string): Promise<void> {
-    // await addMemory( transcription);
-
-    // --- CLASSIFIER L'INTENT ---
+async function handleTranscription(transcription: string, speaker: string = "unknown"): Promise<void> {
+    const t0 = Date.now();
+    trackInteraction();
+    // Check for repeated questions (Alzheimer tracking)
+    const { isRepetition } = checkRepetition(transcription);
+    if (isRepetition) {
+        trackRepeatedQuestion();
+        console.log("[REPETITION] Repeated question detected");
+    }
     const intent = await classifyIntent(transcription);
     console.log(`[INTENT] ${intent.intent} (${intent.category}) [${intent.latency_ms}ms]`);
 
-    // --- RÉPONSES LOCALES (instantanées) ---
-    if (intent.intent === "local_simple") {
+    // Local intent handling
+    if (intent.intent === "local_simple" || intent.intent === "local") {
         const local = await handleLocalIntent(intent.category, transcription);
         if (local.handled && local.response) {
             console.log(`[LOCAL] "${local.response}"`);
             await addMemory(local.response);
             await speakTTS(local.response);
+            logInteraction({
+                timestamp: new Date().toISOString(),
+                speaker,
+                transcription,
+                intent: intent.intent,
+                category: intent.category,
+                response: local.response,
+                latencyMs: Date.now() - t0,
+            });
             return;
         }
         console.log("[LOCAL] Handler declined, falling back to Claude...");
     }
 
-    // --- FILLER PENDANT GÉNÉRATION ---
+    // Filler
     const filler = chooseFiller(intent.category, transcription);
     if (filler.primary) {
-        // Jouer le filler en parallèle avec le lancement de Claude
         playAudioFile(filler.primary).catch(() => {});
     }
 
-    // --- CLAUDE STREAMING ---
+    // Claude streaming + TTS pipeline
     console.log("[CLAUDE] Asking (streaming)...");
-    let isFirstSentence = true;
-    const sentences: string[] = [];
 
-    const fullResponse = await claude.chatStreaming(
-        transcription,
-        async (sentence: string, isFirst: boolean) => {
-            sentences.push(sentence);
-            if (isFirst) {
-                console.log(`[CLAUDE] First: "${sentence}"`);
-            } else {
-                console.log(`[CLAUDE] Queue: "${sentence}"`);
-            }
+    let resolveNext: ((value: IteratorResult<string>) => void) | null = null;
+    let sentenceDone = false;
+    const sentenceQueue: string[] = [];
+
+    const asyncSentenceIterable: AsyncIterable<string> = {
+        [Symbol.asyncIterator]() {
+            return {
+                next(): Promise<IteratorResult<string>> {
+                    if (sentenceQueue.length > 0) {
+                        return Promise.resolve({ value: sentenceQueue.shift()!, done: false });
+                    }
+                    if (sentenceDone) {
+                        return Promise.resolve({ value: undefined as any, done: true });
+                    }
+                    return new Promise((resolve) => { resolveNext = resolve; });
+                }
+            };
         }
-    );
+    };
 
-    // Jouer chaque phrase séquentiellement
-    for (const sentence of sentences) {
-        await speakTTS(sentence);
+    function pushSentence(sentence: string) {
+        if (resolveNext) {
+            const r = resolveNext;
+            resolveNext = null;
+            r({ value: sentence, done: false });
+        } else {
+            sentenceQueue.push(sentence);
+        }
     }
 
-    // Fallback si rien généré
+    function finishSentences() {
+        sentenceDone = true;
+        if (resolveNext) {
+            const r = resolveNext;
+            resolveNext = null;
+            r({ value: undefined as any, done: true });
+        }
+    }
+
+    const claudePromise = claude.chatStreaming(
+        transcription,
+        (sentence: string, isFirst: boolean) => {
+            console.log(`[CLAUDE] ${isFirst ? "First" : "Next"}: "${sentence}"`);
+            pushSentence(sentence);
+        }
+    ).then((fullResponse) => {
+        finishSentences();
+        return fullResponse;
+    });
+
+    const ttsPromise = speakTTSStreaming(asyncSentenceIterable);
+    const [fullResponse] = await Promise.all([claudePromise, ttsPromise]);
+
     if (!fullResponse || fullResponse.trim().length === 0) {
         const fallback = "Désolé, je n'ai pas pu répondre.";
         console.warn("[CLAUDE] Empty response, using fallback");
@@ -227,36 +336,80 @@ async function handleTranscription(transcription: string): Promise<void> {
 
     console.log(`[CLAUDE] Full: "${fullResponse}"`);
     await addMemory(fullResponse);
+
+    logInteraction({
+        timestamp: new Date().toISOString(),
+        speaker,
+        transcription,
+        intent: intent.intent,
+        category: intent.category,
+        response: fullResponse,
+        latencyMs: Date.now() - t0,
+    });
 }
 
 // =====================================================================
 // MAIN
 // =====================================================================
 
+
+// =====================================================================
+// VOICE REGISTRATION
+// =====================================================================
+
+async function handleVoiceRegistrationFlow(): Promise<void> {
+    try {
+        await speakTTS("D accord, je vais enregistrer ta voix. Dis-moi ton prenom suivi d une phrase.");
+
+        const recorded = await recordAudio({ maxDurationS: 8, silenceTimeoutS: 1.5 });
+        if (!recorded.has_speech || !recorded.wav_base64) {
+            await speakTTS("Je n ai rien entendu. Essaie a nouveau plus tard.");
+            return;
+        }
+
+        // Transcribe to get the name
+        const wavBuffer = Buffer.from(recorded.wav_base64, "base64");
+        const transcription = await transcribeLocal(wavBuffer);
+
+        // Extract first word as name
+        const words = transcription.trim().split(/\s+/);
+        const name = words[0]?.replace(/[^a-zA-ZàâéèêëïîôùûüÿçÀÂÉÈÊËÏÎÔÙÛÜŸÇ]/g, "") || "inconnu";
+
+        // Register with the audio embedding
+        const ok = await completeRegistration(name.toLowerCase(), recorded.wav_base64, "adult", name);
+
+        if (ok) {
+            await speakTTS(`C est note ! Je t ai enregistre sous le nom . Je te reconnaitrai a partir de maintenant.`);
+            setCurrentPersona(name.toLowerCase());
+        } else {
+            await speakTTS("Desole, il y a eu un probleme lors de l enregistrement. Reessaie plus tard.");
+        }
+    } catch (err) {
+        console.error("[REGISTER] Error:", err);
+        await speakTTS("Desole, une erreur est survenue.");
+    }
+}
 async function main(): Promise<void> {
     console.log("[DIVA] Starting HTTP Architecture...");
     await init();
 
-    // Vérifier que le serveur audio est prêt
     console.log("[INIT] Vérification du serveur audio (port 9010)...");
     let retries = 0;
     while (!(await checkHealth())) {
         retries++;
         if (retries > 30) {
-            console.error("[INIT] ❌ Serveur audio non disponible après 30 tentatives");
+            console.error("[INIT] Serveur audio non disponible après 30 tentatives");
             process.exit(1);
         }
         console.log(`[INIT] En attente du serveur audio... (${retries}/30)`);
         await sleep(2000);
     }
-    console.log("[INIT] ✅ Serveur audio connecté");
+    console.log("[INIT] Serveur audio connecté");
 
-    // Cleanup
     try { execSync("pkill -9 arecord || true", { timeout: 3000 }); } catch {}
     console.log("[INIT] Cleaned up old processes");
 
-    // Boucle principale
-    console.log("[DIVA] ✅ Ready!");
+    console.log("[DIVA] Ready!");
     while (true) {
         try {
             await idleLoop();
@@ -267,7 +420,6 @@ async function main(): Promise<void> {
     }
 }
 
-// Graceful shutdown
 const shutdown = () => {
     console.log("\n[DIVA] Shutting down...");
     process.exit(0);

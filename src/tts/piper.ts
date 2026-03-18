@@ -1,12 +1,16 @@
 import { writeFile } from "node:fs/promises";
+import { getPersonaTTSConfig } from "../persona/engine.js";
 
 const TTS_BASE_URL = process.env.TTS_BASE_URL ?? "http://localhost:8880";
 
 /**
  * Synthesize text to WAV via Piper TTS HTTP server.
- * Returns the raw WAV buffer.
+ * Adapts speed based on current persona's TTS config.
  */
-export async function synthesize(text: string): Promise<Buffer> {
+export async function synthesize(text: string, lengthScaleOverride?: number): Promise<Buffer> {
+  const ttsConfig = getPersonaTTSConfig();
+  const lengthScale = lengthScaleOverride ?? ttsConfig.lengthScale;
+
   const response = await fetch(`${TTS_BASE_URL}/v1/audio/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -14,6 +18,7 @@ export async function synthesize(text: string): Promise<Buffer> {
       input: text,
       voice: "fr_FR-siwis-medium",
       response_format: "wav",
+      speed: 1 / lengthScale, // Piper: speed > 1 = faster, we use inverse of lengthScale
     }),
   });
 
@@ -27,11 +32,6 @@ export async function synthesize(text: string): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
-/**
- * Synthesize text and save as WAV file.
- * @param text - Text to speak
- * @param outputPath - Path to save WAV file
- */
 export async function synthesizeToFile(
   text: string,
   outputPath: string

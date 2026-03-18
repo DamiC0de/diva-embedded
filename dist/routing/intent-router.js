@@ -1,8 +1,20 @@
 /**
- * Intent Router v2 — calls local keyword classifier on port 8882
+ * Intent Router v3 — calls local keyword classifier on port 8882
  * Routes simple queries locally, complex ones to Claude
+ *
+ * v3.1: Added joke handler, reminder support, DND mode
  */
+import { startTimer, listTimers, cancelAllTimers, restoreTimers } from "../tools/timer-manager.js";
+import { getRandomJoke, getRandomRiddle, getRandomFact } from "../tools/jokes.js";
+import { enableDND, disableDND } from "../tools/dnd-manager.js";
+import { handleShoppingCommand } from "../tools/shopping-list.js";
+import { playRadio, stopRadio, setVolume, listStations } from "../tools/radio.js";
+import { generateBriefing } from "../tools/morning-briefing.js";
+import { findRoutine, executeRoutine, listRoutines } from "../tools/routines.js";
+import { handleHomeCommand } from "../smarthome/ha-connector.js";
 const INTENT_URL = process.env.INTENT_URL ?? "http://localhost:8882";
+// Restore timers on module load
+restoreTimers().catch((err) => console.error("[Router] Timer restore failed:", err));
 export async function classifyIntent(text) {
     try {
         const res = await fetch(`${INTENT_URL}/v1/classify`, {
@@ -21,7 +33,6 @@ export async function classifyIntent(text) {
     }
 }
 async function fetchWeather(text) {
-    // Extract city from text or default to Bouclans
     let city = "Bouclans";
     const cityMatch = text.match(/m[eé]t[eé]o\s+(?:de\s+|[aà]\s+)?([A-Z][a-z]+)/i) || text.match(/(?:[aà]|de)\s+([A-Z][a-zé]+)\s*\??$/i);
     if (cityMatch)
@@ -38,6 +49,22 @@ async function fetchWeather(text) {
     catch {
         return "";
     }
+}
+function parseReminderMessage(text) {
+    // Extract custom message from reminder text
+    // "rappelle-moi dans 30 min de sortir le gâteau" → "sortir le gâteau"
+    // "dans 10 minutes, vérifie le four" → "vérifie le four"
+    const patterns = [
+        /(?:rappelle[- ]?moi|rappel)\s+(?:dans\s+\d+\s*\w+\s+)?(?:de\s+|d'|que\s+)(.+)/i,
+        /(?:dans\s+\d+\s*\w+)\s*[,.]?\s*(.+)/i,
+    ];
+    for (const pat of patterns) {
+        const m = text.match(pat);
+        if (m && m[1] && m[1].trim().length > 3) {
+            return m[1].trim();
+        }
+    }
+    return "";
 }
 export async function handleLocalIntent(category, text) {
     switch (category) {
@@ -64,7 +91,7 @@ export async function handleLocalIntent(category, text) {
             const weather = await fetchWeather(text);
             if (weather)
                 return { handled: true, response: weather };
-            return { handled: false }; // fallback to Claude
+            return { handled: false };
         }
         case "greeting": {
             const hour = new Date().toLocaleString("fr-FR", {
@@ -131,7 +158,7 @@ export async function handleLocalIntent(category, text) {
             if (/c.est (tout|bon)/i.test(t)) {
                 return { handled: true, response: "OK, je reste la si besoin!" };
             }
-            return { handled: false }; // fallback to Claude
+            return { handled: false };
         }
         case "shutdown": {
             const replies = ["OK, je me tais.", "D'accord, silence.", "Compris."];
@@ -169,29 +196,148 @@ export async function handleLocalIntent(category, text) {
                     r = a + b;
                     opStr = "?";
                 }
-                // Format result nicely
                 const rStr = Number.isInteger(r) ? r.toString() : r.toFixed(2);
                 return { handled: true, response: `${a} ${opStr} ${b} egale ${rStr}.` };
             }
-            return { handled: false }; // can't parse, let Claude handle
+            return { handled: false };
+        }
+        case "joke": {
+            const t = text.toLowerCase();
+            if (/devinette|charade|enigme|[eé]nigme/i.test(t)) {
+                const riddle = getRandomRiddle();
+                if (riddle) {
+                    return { handled: true, response: `${riddle.question} ... ${riddle.answer}` };
+                }
+            }
+            if (/fait.*(jour|amusant|int[eé]ressant|marrant)|anecdote|savais/i.test(t)) {
+                const fact = getRandomFact();
+                if (fact) {
+                    return { handled: true, response: `Le savais-tu ? ${fact.text}` };
+                }
+            }
+            // Default: joke
+            const joke = getRandomJoke();
+            if (joke) {
+                return { handled: true, response: joke.text };
+            }
+            return { handled: false };
+        }
+        case "dnd": {
+            const t = text.toLowerCase();
+            // Check if disabling
+            if (/d[eé]sactive|arr[eê]te|remet|r[eé]active|mode\s+normal/i.test(t)) {
+                disableDND();
+                return { handled: true, response: "Mode normal réactivé. Je suis de retour !" };
+            }
+            // Enable DND
+            // Try to extract duration: "mode nuit pendant 8 heures" or schedule
+            const durMatch = t.match(/(\d+)\s*(heure|h|minute|min)/i);
+            if (durMatch) {
+                const val = parseInt(durMatch[1]);
+                const unit = durMatch[2].toLowerCase();
+                let ms;
+                let unitStr;
+                if (unit.startsWith("h")) {
+                    ms = val * 60 * 60 * 1000;
+                    unitStr = val > 1 ? "heures" : "heure";
+                }
+                else {
+                    ms = val * 60 * 1000;
+                    unitStr = val > 1 ? "minutes" : "minute";
+                }
+                enableDND(ms);
+                return { handled: true, response: `Mode ne pas déranger activé pour ${val} ${unitStr}. Dis "Diva, mode normal" pour me réactiver.` };
+            }
+            // Default: 8 hours
+            enableDND(8 * 60 * 60 * 1000);
+            return { handled: true, response: "Mode nuit activé pour 8 heures. Bonne nuit !" };
         }
         case "timer": {
-            // Extract duration
+            const t = text.toLowerCase();
+            // Cancel all timers
+            if (/annul|supprime|arr[eê]te.*minuteur|stop.*timer/i.test(t)) {
+                const count = cancelAllTimers();
+                if (count === 0)
+                    return { handled: true, response: "Il n'y a aucun minuteur en cours." };
+                return { handled: true, response: `${count} minuteur${count > 1 ? "s" : ""} annulé${count > 1 ? "s" : ""}.` };
+            }
+            // List timers
+            if (/combien|liste|quels?.*minuteur|en cours/i.test(t)) {
+                const timers = listTimers();
+                if (timers.length === 0)
+                    return { handled: true, response: "Aucun minuteur en cours." };
+                const desc = timers.map((tm) => {
+                    const min = Math.floor(tm.remainingS / 60);
+                    const sec = tm.remainingS % 60;
+                    const timeStr = min > 0 ? `${min} minute${min > 1 ? "s" : ""} et ${sec} seconde${sec > 1 ? "s" : ""}` : `${sec} seconde${sec > 1 ? "s" : ""}`;
+                    return `${tm.label || "Minuteur"}: ${timeStr} restantes`;
+                }).join(". ");
+                return { handled: true, response: `${timers.length} minuteur${timers.length > 1 ? "s" : ""} en cours. ${desc}.` };
+            }
+            // Start a new timer (with optional reminder message)
             const dm = text.match(/(\d+)\s*(minute|min|seconde|sec|heure|h)\b/i);
             if (dm) {
                 const val = parseInt(dm[1]);
                 const unit = dm[2].toLowerCase();
                 let unitStr;
-                if (unit.startsWith("min"))
+                let durationMs;
+                if (unit.startsWith("min")) {
                     unitStr = val > 1 ? "minutes" : "minute";
-                else if (unit.startsWith("sec"))
+                    durationMs = val * 60 * 1000;
+                }
+                else if (unit.startsWith("sec")) {
                     unitStr = val > 1 ? "secondes" : "seconde";
-                else
+                    durationMs = val * 1000;
+                }
+                else {
                     unitStr = val > 1 ? "heures" : "heure";
-                // TODO: actually start a timer process
-                return { handled: true, response: `Timer de ${val} ${unitStr}, c'est parti !` };
+                    durationMs = val * 60 * 60 * 1000;
+                }
+                const label = `${val} ${unitStr}`;
+                const message = parseReminderMessage(text);
+                startTimer(durationMs, label, message);
+                if (message) {
+                    return { handled: true, response: `C'est noté ! Je te rappellerai dans ${label} : ${message}.` };
+                }
+                return { handled: true, response: `Minuteur de ${label}, c'est parti !` };
             }
             return { handled: false };
+        }
+        case "shopping": {
+            const result = handleShoppingCommand(text, "default");
+            if (result.handled)
+                return result;
+            return { handled: false };
+        }
+        case "radio": {
+            const t = text.toLowerCase();
+            if (/arr[eê]te|coupe|stop/i.test(t)) {
+                return { handled: true, response: stopRadio() };
+            }
+            if (/quelles?s+radio|disponible/i.test(t)) {
+                return { handled: true, response: listStations() };
+            }
+            if (/volume|pluss+fort|moinss+fort|baisse|monte|muet|mute/i.test(t)) {
+                return { handled: true, response: setVolume(text) };
+            }
+            return { handled: true, response: playRadio(text) };
+        }
+        case "home_control": {
+            const result = await handleHomeCommand(text);
+            return result;
+        }
+        case "routine": {
+            const routine = findRoutine(text);
+            if (routine) {
+                const results = await executeRoutine(routine);
+                const speechParts = results.filter(r => r.length > 0);
+                return { handled: true, response: speechParts[0] || "Routine lancee." };
+            }
+            return { handled: true, response: listRoutines() };
+        }
+        case "briefing": {
+            const briefing = await generateBriefing();
+            return { handled: true, response: briefing };
         }
         default:
             return { handled: false };

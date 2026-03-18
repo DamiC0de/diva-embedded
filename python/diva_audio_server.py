@@ -34,10 +34,10 @@ CHANNELS = 1
 
 # Wake word
 WAKEWORD_MODEL_PATH = "/opt/diva-embedded/assets/diva_fr.onnx"
-WAKEWORD_THRESHOLD = 0.85
+WAKEWORD_THRESHOLD = 0.7
 
 # VAD
-SILENCE_TIMEOUT_S = 1.2
+SILENCE_TIMEOUT_S = 0.8
 MIN_SPEECH_MS = 300
 
 
@@ -144,7 +144,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
     """Écoute le micro en continu et retourne quand le wake word est détecté."""
     # Reset le modèle et drain le buffer audio
     oww_model.reset()
-    time.sleep(0.3)  # Laisser le buffer se vider
+    time.sleep(0.5)  # Laisser le buffer se vider après playback
     proc = subprocess.Popen(
         [
             "arecord", "-D", ALSA_DEVICE,
@@ -158,8 +158,8 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
     CHUNK_SAMPLES = 1280  # 80ms à 16kHz
     CHUNK_BYTES = CHUNK_SAMPLES * 2
 
-    # Drain: lire et jeter quelques frames pour vider le buffer
-    for _ in range(5):
+    # Drain: lire et jeter 20 frames (~1.6s) pour vider l'écho résiduel
+    for _ in range(20):
         proc.stdout.read(CHUNK_BYTES)
     oww_model.reset()  # Reset après drain
 
@@ -176,6 +176,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
 
             # Skip si muted
             if is_muted:
+                oww_model.reset()
                 time.sleep(0.1)
                 continue
 
@@ -337,7 +338,7 @@ def _play_wav_safe(wav_path: str):
             ["aplay", "-D", ALSA_DEVICE, wav_path],
             capture_output=True, timeout=30
         )
-        time.sleep(0.05)
+        time.sleep(0.3)  # Laisser l'écho se dissiper avant unmute
     finally:
         _unmute_mic()
 
