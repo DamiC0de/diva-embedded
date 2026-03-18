@@ -16,7 +16,7 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { listTimers } from "../tools/timer-manager.js";
 import { getDNDStatus, enableDND, disableDND } from "../tools/dnd-manager.js";
@@ -531,6 +531,96 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         respond(res, r.status, await r.json());
       } catch (err) {
         respond(res, 500, { error: "Memory service unreachable" });
+      }
+      return;
+    }
+
+
+    // =====================================================================
+    // LIVE LOGS — SSE stream + journalctl fetch
+    // =====================================================================
+
+    // SSE stream: real-time logs from all diva services
+    if (path === "/api/logs/stream" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.write("data: {}\"connected\"\n\n");
+
+      const services = url.searchParams.get("services") || "diva-server,diva-audio,diva-memory,intent-router";
+      const units = services.split(",").map((s: string) => `-u ${s.trim()}`).join(" ");
+
+      const child = spawn("journalctl", [
+        ...units.split(" "),
+        "-f", "--no-pager", "-o", "json", "--since", "now",
+      ], { shell: true });
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            const data = {
+              ts: entry.__REALTIME_TIMESTAMP
+                ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
+                : new Date().toISOString(),
+              unit: entry._SYSTEMD_UNIT || "unknown",
+              msg: entry.MESSAGE || "",
+              priority: entry.PRIORITY || "6",
+            };
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+          } catch {
+            // non-JSON line, send raw
+            res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), unit: "raw", msg: line, priority: "6" })}\n\n`);
+          }
+        }
+      });
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), unit: "stderr", msg: chunk.toString().trim(), priority: "3" })}\n\n`);
+      });
+
+      req.on("close", () => {
+        child.kill("SIGTERM");
+      });
+
+      return;
+    }
+
+    // Fetch recent logs (non-streaming, for initial load)
+    if (path === "/api/logs/journalctl" && req.method === "GET") {
+      const services = url.searchParams.get("services") || "diva-server,diva-audio,diva-memory,intent-router";
+      const lines = parseInt(url.searchParams.get("lines") || "100");
+      const units = services.split(",").map((s: string) => `-u ${s.trim()}`).join(" ");
+
+      try {
+        const raw = execSync(
+          `journalctl ${units} --no-pager -o json -n ${lines} 2>/dev/null || true`,
+          { timeout: 5000, maxBuffer: 1024 * 1024 }
+        ).toString();
+
+        const entries = raw.split("\n").filter(Boolean).map((line: string) => {
+          try {
+            const entry = JSON.parse(line);
+            return {
+              ts: entry.__REALTIME_TIMESTAMP
+                ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
+                : "",
+              unit: (entry._SYSTEMD_UNIT || "").replace(".service", ""),
+              msg: entry.MESSAGE || "",
+              priority: entry.PRIORITY || "6",
+            };
+          } catch {
+            return null;
+          }
+        }).filter(Boolean);
+
+        respond(res, 200, { entries });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
       }
       return;
     }

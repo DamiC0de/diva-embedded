@@ -81,6 +81,29 @@
     .speaker-actions button { margin-left: 6px; padding: 3px 8px; font-size: 0.7rem; }
     .apply-btn { background: var(--accent); margin-top: 12px; }
     .section-subtitle { font-size: 0.85rem; color: var(--accent); margin: 12px 0 6px; font-weight: 600; }
+
+    .monitoring-card { max-height: 600px; display: flex; flex-direction: column; }
+    .log-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+    .log-controls label { font-size: 0.75rem; color: var(--muted); }
+    .log-controls select, .log-controls input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; }
+    .log-container { flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.75rem; line-height: 1.6; background: #0a0c10; border-radius: 6px; padding: 8px; min-height: 300px; max-height: 500px; }
+    .log-line { white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid rgba(255,255,255,0.03); padding: 1px 0; }
+    .log-ts { color: #555; }
+    .log-unit { font-weight: 600; min-width: 100px; display: inline-block; }
+    .log-unit-diva-server { color: var(--accent); }
+    .log-unit-diva-audio { color: var(--green); }
+    .log-unit-diva-memory { color: var(--orange); }
+    .log-unit-intent-router { color: var(--blue); }
+    .log-msg { color: #ccc; }
+    .log-msg-error { color: var(--red); }
+    .log-msg-warn { color: var(--orange); }
+    .log-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.65rem; margin-left: 4px; }
+    .log-badge-live { background: rgba(74,222,128,0.2); color: var(--green); animation: pulse 2s infinite; }
+    .log-badge-paused { background: rgba(248,113,113,0.2); color: var(--red); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .filter-chip { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+    .filter-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .log-search { width: 200px; }
     .refresh-info { font-size: 0.7rem; color: var(--muted); }
   </style>
 </head>
@@ -226,6 +249,26 @@
         <div id="speakersList"><span class="stat-label">Chargement...</span></div>
       </div>
     </div>
+  </div>
+
+
+  <!-- Live Monitoring -->
+  <div class="card monitoring-card" style="margin-bottom: 16px;">
+    <h2>Monitoring Live <span class="log-badge log-badge-live" id="streamBadge">LIVE</span></h2>
+    <div class="log-controls">
+      <div>
+        <button class="filter-chip active" data-unit="all" onclick="toggleLogFilter(this)">Tous</button>
+        <button class="filter-chip active" data-unit="diva-server" onclick="toggleLogFilter(this)">diva-server</button>
+        <button class="filter-chip active" data-unit="diva-audio" onclick="toggleLogFilter(this)">diva-audio</button>
+        <button class="filter-chip active" data-unit="diva-memory" onclick="toggleLogFilter(this)">diva-memory</button>
+        <button class="filter-chip active" data-unit="intent-router" onclick="toggleLogFilter(this)">intent-router</button>
+      </div>
+      <input type="text" class="log-search" id="logSearch" placeholder="Filtrer les logs..." oninput="filterLogs()">
+      <button class="secondary" id="pauseBtn" onclick="togglePause()">Pause</button>
+      <button class="secondary" onclick="clearLogs()">Clear</button>
+      <label><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
+    </div>
+    <div class="log-container" id="logContainer"></div>
   </div>
 
   <!-- Interaction Logs -->
@@ -385,6 +428,7 @@
       form.append('file', file);
       await fetch(`${API}/api/sounds/upload`, { method: 'POST', body: form });
       fetchSounds();
+    initLiveMonitoring();
     fetchAudioTuning();
     fetchSpeakerTuning();
     fetchSpeakers();
@@ -624,6 +668,164 @@
       } catch(e) { alert('Erreur: ' + e); }
     }
 
+
+    // =====================================================================
+    // LIVE MONITORING
+    // =====================================================================
+
+    var logEntries = [];
+    var maxLogEntries = 500;
+    var logPaused = false;
+    var logEventSource = null;
+    var activeFilters = new Set(['all', 'diva-server', 'diva-audio', 'diva-memory', 'intent-router']);
+
+    function initLiveMonitoring() {
+      // Load recent history first
+      fetch(API + '/api/logs/journalctl?lines=80')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.entries) {
+            data.entries.forEach(function(e) { addLogEntry(e); });
+            scrollLogToBottom();
+          }
+          // Then connect SSE
+          connectSSE();
+        })
+        .catch(function(e) {
+          console.error('Log history load failed:', e);
+          connectSSE();
+        });
+    }
+
+    function connectSSE() {
+      if (logEventSource) logEventSource.close();
+      logEventSource = new EventSource(API + '/api/logs/stream?services=diva-server,diva-audio,diva-memory,intent-router');
+
+      logEventSource.onmessage = function(event) {
+        if (logPaused) return;
+        try {
+          var entry = JSON.parse(event.data);
+          if (entry.msg) addLogEntry(entry);
+        } catch(e) {}
+      };
+
+      logEventSource.onerror = function() {
+        document.getElementById('streamBadge').className = 'log-badge log-badge-paused';
+        document.getElementById('streamBadge').textContent = 'RECONNECTING';
+        setTimeout(connectSSE, 3000);
+      };
+
+      logEventSource.onopen = function() {
+        document.getElementById('streamBadge').className = 'log-badge log-badge-live';
+        document.getElementById('streamBadge').textContent = 'LIVE';
+      };
+    }
+
+    function addLogEntry(entry) {
+      logEntries.push(entry);
+      if (logEntries.length > maxLogEntries) {
+        logEntries.shift();
+      }
+      renderLogEntry(entry);
+    }
+
+    function renderLogEntry(entry) {
+      var container = document.getElementById('logContainer');
+      var unitClean = (entry.unit || '').replace('.service', '');
+
+      // Filter check
+      if (!activeFilters.has('all') && !activeFilters.has(unitClean)) return;
+
+      // Search filter
+      var search = document.getElementById('logSearch').value.toLowerCase();
+      if (search && !(entry.msg || '').toLowerCase().includes(search) && !unitClean.toLowerCase().includes(search)) return;
+
+      var div = document.createElement('div');
+      div.className = 'log-line';
+      div.setAttribute('data-unit', unitClean);
+
+      var ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '--:--:--';
+      var unitClass = 'log-unit log-unit-' + unitClean;
+      var msgClass = 'log-msg';
+      var msg = entry.msg || '';
+      if (msg.match(/error|Error|ERROR|failed|Failed/i)) msgClass += ' log-msg-error';
+      else if (msg.match(/warn|WARN|Warning/i)) msgClass += ' log-msg-warn';
+
+      div.innerHTML = '<span class="log-ts">' + ts + '</span> <span class="' + unitClass + '">' + unitClean.padEnd(14) + '</span> <span class="' + msgClass + '">' + escapeHtml(msg) + '</span>';
+      container.appendChild(div);
+
+      // Trim DOM
+      while (container.children.length > maxLogEntries) {
+        container.removeChild(container.firstChild);
+      }
+
+      if (document.getElementById('autoScroll').checked) {
+        scrollLogToBottom();
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function scrollLogToBottom() {
+      var c = document.getElementById('logContainer');
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function togglePause() {
+      logPaused = !logPaused;
+      var btn = document.getElementById('pauseBtn');
+      var badge = document.getElementById('streamBadge');
+      if (logPaused) {
+        btn.textContent = 'Resume';
+        badge.className = 'log-badge log-badge-paused';
+        badge.textContent = 'PAUSED';
+      } else {
+        btn.textContent = 'Pause';
+        badge.className = 'log-badge log-badge-live';
+        badge.textContent = 'LIVE';
+      }
+    }
+
+    function clearLogs() {
+      logEntries = [];
+      document.getElementById('logContainer').innerHTML = '';
+    }
+
+    function toggleLogFilter(el) {
+      var unit = el.getAttribute('data-unit');
+      if (unit === 'all') {
+        // Toggle all
+        var allActive = el.classList.contains('active');
+        document.querySelectorAll('.filter-chip').forEach(function(c) {
+          if (allActive) c.classList.remove('active');
+          else c.classList.add('active');
+        });
+        if (allActive) activeFilters.clear();
+        else { activeFilters.clear(); activeFilters.add('all'); activeFilters.add('diva-server'); activeFilters.add('diva-audio'); activeFilters.add('diva-memory'); activeFilters.add('intent-router'); }
+      } else {
+        el.classList.toggle('active');
+        if (el.classList.contains('active')) activeFilters.add(unit);
+        else activeFilters.delete(unit);
+        // Update "all" chip
+        var allChip = document.querySelector('.filter-chip[data-unit="all"]');
+        if (activeFilters.size >= 4) allChip.classList.add('active');
+        else allChip.classList.remove('active');
+      }
+      rerenderLogs();
+    }
+
+    function filterLogs() {
+      rerenderLogs();
+    }
+
+    function rerenderLogs() {
+      document.getElementById('logContainer').innerHTML = '';
+      logEntries.forEach(function(e) { renderLogEntry(e); });
+      scrollLogToBottom();
+    }
+
     function refreshAll() {
       fetchStatus();
       fetchLogs();
@@ -638,6 +840,7 @@
     fetchHealth();
     fetchRoutines();
     fetchSounds();
+    initLiveMonitoring();
     fetchAudioTuning();
     fetchSpeakerTuning();
     fetchSpeakers();
