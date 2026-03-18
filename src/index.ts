@@ -46,7 +46,7 @@ const FOLLOW_UP_ENABLED = true;
 const ASSETS_DIR = "/opt/diva-embedded/assets";
 
 const GOODBYE_PHRASES = [
-    "bonne nuit", "au revoir", "à plus", "salut", "ciao",
+    "bonne nuit", "au revoir", "à plus", "ciao",
     "j'ai fini", "c'est bon", "merci c'est tout", "ça ira"
 ];
 
@@ -87,8 +87,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 function containsGoodbye(text: string): boolean {
-    const lower = text.toLowerCase();
-    return GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
+    const lower = text.toLowerCase().trim();
+    // Short utterances: must be primarily a goodbye
+    if (lower.length < 20) {
+        return GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
+    }
+    // Longer utterances: goodbye must be at the end
+    return GOODBYE_PHRASES.some(phrase => lower.endsWith(phrase) || lower.endsWith(phrase + " !") || lower.endsWith(phrase + "."));
 }
 
 // =====================================================================
@@ -348,7 +353,6 @@ async function handleTranscription(transcription: string, speaker: string = "unk
         const fallback = "Désolé, je n'ai pas pu répondre.";
         console.warn("[CLAUDE] Empty response, using fallback");
         await speakTTS(fallback);
-        await addMemory(fallback);
         return;
     }
 
