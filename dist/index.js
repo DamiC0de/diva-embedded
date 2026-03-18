@@ -147,9 +147,7 @@ async function conversationLoop() {
     let isFirstTurn = true;
     while (true) {
         // Beep to signal "your turn to speak"
-        if (!isFirstTurn) {
-            await playAudioFile(`${ASSETS_DIR}/listen.wav`);
-        }
+        await playAudioFile(`${ASSETS_DIR}/listen.wav`);
         console.log("[REC] Enregistrement en cours...");
         const recorded = await recordAudio({
             maxDurationS: 10,
@@ -201,7 +199,6 @@ async function conversationLoop() {
         if (!FOLLOW_UP_ENABLED)
             break;
         isFirstTurn = false;
-        await playAudioFile(`${ASSETS_DIR}/thinking.wav`);
     }
     console.log("[CONV] Fin de conversation, retour au wake word\n");
 }
