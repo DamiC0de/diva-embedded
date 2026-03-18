@@ -121,6 +121,9 @@ INTENT_RULES_ORDERED = [
         r"\b(qu.est.ce que|que|quoi).*(sais|connais|retenu|souviens).*(sur moi|de moi|me concern)",
         r"\b(tu\s+(me\s+)?connais|tu\s+sais\s+qui\s+je\s+suis)",
         r"\b(parle[- ]moi\s+de\s+moi|dis[- ]moi\s+ce\s+que\s+tu\s+sais)",
+        r"\bsais.*[aà]\s+qui\s+tu\s+parle",
+        r"\b(qui\s+je\s+suis|tu\s+me\s+reconnais)",
+        r"\b(c.est\s+qui\s+qui\s+te\s+parle|tu\s+sais\s+c.est\s+qui)",
     ]),
     # Identity
     ("identity", [
@@ -209,6 +212,11 @@ def classify_qwen(text):
         cat = result["choices"][0]["message"]["content"].strip().lower().strip('"').strip("'")
         if cat not in valid:
             cat = "complex"
+        # Safety: if Qwen picks a sensitive local intent, verify it makes sense
+        # These intents should only match with high regex confidence, not Qwen guessing
+        risky_local = {"dnd", "shutdown", "timer", "home_control", "speaker_register"}
+        if cat in risky_local:
+            cat = "complex"  # Let Claude handle ambiguous cases
         return cat, 0.7
     except Exception as e:
         logger.warning(f"Qwen error: {e}")
