@@ -14,6 +14,7 @@
  */
 import { createServer } from "node:http";
 import { readFile, writeFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { execSync, spawn } from "node:child_process";
 import { join } from "node:path";
 import { listTimers } from "../tools/timer-manager.js";
@@ -41,6 +42,7 @@ const SOUND_SLOTS = {
     idle_return: { description: "Return to idle / goodbye", defaultFile: "goodbye.wav" },
     timer_end: { description: "Timer expired", defaultFile: "bibop.wav" },
     thinking: { description: "Processing / thinking", defaultFile: "thinking.wav" },
+    listen: { description: "Your turn to speak (beep)", defaultFile: "listen.wav" },
 };
 // System metrics helpers
 function getSystemMetrics() {
@@ -644,6 +646,33 @@ async function handleRequest(req, res) {
             }
             catch (err) {
                 respond(res, 500, { error: String(err) });
+            }
+            return;
+        }
+        // Serve a WAV file from assets for browser playback
+        if (path.startsWith("/api/sounds/play/") && req.method === "GET") {
+            const filename = decodeURIComponent(path.replace("/api/sounds/play/", ""));
+            // Security: only allow .wav files from assets dir, no path traversal
+            if (filename.includes("..") || filename.includes("/") || !filename.endsWith(".wav")) {
+                respond(res, 400, { error: "Invalid filename" });
+                return;
+            }
+            const filePath = join(ASSETS_DIR, filename);
+            if (!existsSync(filePath)) {
+                respond(res, 404, { error: "File not found" });
+                return;
+            }
+            try {
+                const data = await readFile(filePath);
+                res.writeHead(200, {
+                    "Content-Type": "audio/wav",
+                    "Content-Length": data.length.toString(),
+                    "Access-Control-Allow-Origin": "*",
+                });
+                res.end(data);
+            }
+            catch {
+                respond(res, 500, { error: "Read error" });
             }
             return;
         }

@@ -116,6 +116,10 @@
     .memory-add-form { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
     .memory-add-form input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
     .memory-count { font-size: 0.75rem; color: var(--muted); }
+
+    .sound-play { background: var(--accent); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sound-play:hover { opacity: 0.8; }
+    .sound-play:active { transform: scale(0.95); }
     .refresh-info { font-size: 0.7rem; color: var(--muted); }
   </style>
 </head>
@@ -402,15 +406,24 @@
 
     function renderSounds(sounds) {
       const el = document.getElementById('sounds');
-      el.innerHTML = Object.entries(sounds).map(([slot, info]) => {
-        return `<div class="sound-row">
-          <div class="sound-label">
-            <div>${info.description}</div>
-            <div class="sound-desc">${slot}</div>
-          </div>
-          <div class="sound-file">${info.currentFile}</div>
-        </div>`;
+      el.innerHTML = Object.entries(sounds).map(function(entry) {
+        var slot = entry[0], info = entry[1];
+        return '<div class="sound-row">' +
+          '<button class="sound-play" onclick="playSound(\'' + info.currentFile + '\')" title="Ecouter">&#9654;</button>' +
+          '<div class="sound-label">' +
+            '<div>' + info.description + '</div>' +
+            '<div class="sound-desc">' + slot + '</div>' +
+          '</div>' +
+          '<div class="sound-file">' + info.currentFile + '</div>' +
+        '</div>';
       }).join('');
+    }
+
+    var currentAudio = null;
+    function playSound(filename) {
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentAudio = new Audio(API + '/api/sounds/play/' + encodeURIComponent(filename));
+      currentAudio.play().catch(function(e) { alert('Erreur lecture: ' + e.message); });
     }
 
     function renderDND(data) {

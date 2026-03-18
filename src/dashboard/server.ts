@@ -58,6 +58,7 @@ const SOUND_SLOTS: Record<string, { description: string; defaultFile: string }> 
   idle_return: { description: "Return to idle / goodbye", defaultFile: "goodbye.wav" },
   timer_end: { description: "Timer expired", defaultFile: "bibop.wav" },
   thinking: { description: "Processing / thinking", defaultFile: "thinking.wav" },
+  listen: { description: "Your turn to speak (beep)", defaultFile: "listen.wav" },
 };
 
 // System metrics helpers
@@ -715,6 +716,34 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         respond(res, 200, await r.json());
       } catch (err) {
         respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+
+    // Serve a WAV file from assets for browser playback
+    if (path.startsWith("/api/sounds/play/") && req.method === "GET") {
+      const filename = decodeURIComponent(path.replace("/api/sounds/play/", ""));
+      // Security: only allow .wav files from assets dir, no path traversal
+      if (filename.includes("..") || filename.includes("/") || !filename.endsWith(".wav")) {
+        respond(res, 400, { error: "Invalid filename" });
+        return;
+      }
+      const filePath = join(ASSETS_DIR, filename);
+      if (!existsSync(filePath)) {
+        respond(res, 404, { error: "File not found" });
+        return;
+      }
+      try {
+        const data = await readFile(filePath);
+        res.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Length": data.length.toString(),
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(data);
+      } catch {
+        respond(res, 500, { error: "Read error" });
       }
       return;
     }
