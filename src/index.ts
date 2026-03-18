@@ -250,13 +250,6 @@ async function conversationLoop(): Promise<void> {
 async function handleTranscription(transcription: string, speaker: string = "unknown"): Promise<void> {
     const t0 = Date.now();
 
-    // Guard: reject transcriptions that look like garbage (non-French)
-    const frenchRatio = (transcription.match(/[a-zA-ZàâäéèêëïîôùûüÿçœæÀÂÄÉÈÊËÏÎÔÙÛÜŸÇŒÆ]/g) || []).length / transcription.length;
-    if (transcription.length > 2 && frenchRatio < 0.5) {
-        console.log(`[GUARD] Transcription rejetée (${Math.round(frenchRatio * 100)}% français): "${transcription}"`);
-        return;
-    }
-
     trackInteraction();
     // Check for repeated questions (Alzheimer tracking)
     const { isRepetition } = checkRepetition(transcription);
