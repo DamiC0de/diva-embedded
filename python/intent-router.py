@@ -212,12 +212,11 @@ def classify_qwen(text):
         cat = result["choices"][0]["message"]["content"].strip().lower().strip('"').strip("'")
         if cat not in valid:
             cat = "complex"
-        # Safety: if Qwen picks a sensitive local intent, verify it makes sense
-        # These intents should only match with high regex confidence, not Qwen guessing
-        risky_local = {"dnd", "shutdown", "timer", "home_control", "speaker_register"}
-        if cat in risky_local:
-            cat = "complex"  # Let Claude handle ambiguous cases
-        return cat, 0.7
+        # Qwen 0.5B is too unreliable for French intent classification.
+        # ALL Qwen results forced to "complex" — only regex triggers local intents.
+        # Qwen classification is logged for debugging but not used for routing.
+        logger.info(f"Qwen suggested: {cat} (overridden to complex)")
+        return "complex", 0.5
     except Exception as e:
         logger.warning(f"Qwen error: {e}")
         return "complex", 0.0
