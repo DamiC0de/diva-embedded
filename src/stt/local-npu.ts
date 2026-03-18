@@ -35,8 +35,23 @@ function cleanHallucinations(text: string): string {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase().replace(/[.!?]+$/, "").trim();
 
+  // Reject exact known hallucinations
   if (EXACT_HALLUCINATIONS.has(lower)) {
-    console.log(`  [HALLUCINATION] Rejeté: "${trimmed}"`);
+    console.log(`  [HALLUCINATION] Exact match rejeté: "${trimmed}"`);
+    return "";
+  }
+
+  // Reject non-French text: CJK, Hangul, Cyrillic, Arabic, Devanagari
+  const nonLatinRatio = (trimmed.match(/[\u3000-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF\u0900-\u097F\uFF00-\uFFEF]/g) || []).length / trimmed.length;
+  if (nonLatinRatio > 0.3) {
+    console.log(`  [HALLUCINATION] Non-French rejeté (${Math.round(nonLatinRatio * 100)}% non-latin): "${trimmed}"`);
+    return "";
+  }
+
+  // Reject if mostly non-ASCII and not French accented chars
+  const frenchChars = (trimmed.match(/[a-zA-ZàâäéèêëïîôùûüÿçœæÀÂÄÉÈÊËÏÎÔÙÛÜŸÇŒÆ0-9\s.,!?;:'"\-]/g) || []).length;
+  if (trimmed.length > 3 && frenchChars / trimmed.length < 0.6) {
+    console.log(`  [HALLUCINATION] Low French ratio rejeté (${Math.round(frenchChars / trimmed.length * 100)}%): "${trimmed}"`);
     return "";
   }
 

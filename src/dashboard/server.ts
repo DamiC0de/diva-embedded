@@ -563,12 +563,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         for (const line of lines) {
           try {
             const entry = JSON.parse(line);
+            const msg = entry.MESSAGE || "";
+            // Filter out noisy health check logs
+            if (msg.includes("GET /health") || msg.includes("GET /tuning")) continue;
             const data = {
               ts: entry.__REALTIME_TIMESTAMP
                 ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
                 : new Date().toISOString(),
               unit: entry._SYSTEMD_UNIT || "unknown",
-              msg: entry.MESSAGE || "",
+              msg,
               priority: entry.PRIORITY || "6",
             };
             res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -605,12 +608,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         const entries = raw.split("\n").filter(Boolean).map((line: string) => {
           try {
             const entry = JSON.parse(line);
+            const msg2 = entry.MESSAGE || "";
+            // Filter health check noise
+            if (msg2.includes("GET /health") || msg2.includes("GET /tuning")) return null;
             return {
               ts: entry.__REALTIME_TIMESTAMP
                 ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
                 : "",
               unit: (entry._SYSTEMD_UNIT || "").replace(".service", ""),
-              msg: entry.MESSAGE || "",
+              msg: msg2,
               priority: entry.PRIORITY || "6",
             };
           } catch {
