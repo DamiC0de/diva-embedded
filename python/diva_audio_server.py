@@ -195,6 +195,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
     oww_model.reset()  # Reset après drain
 
     start_time = time.time()
+    cooldown_s = 3.0  # Ignore detections for 3s after drain (anti-echo)
 
     try:
         while True:
@@ -213,6 +214,11 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
 
             audio = np.frombuffer(raw, dtype=np.int16)
             prediction = oww_model.predict(audio)
+
+            # Ignore detections during cooldown period (echo protection)
+            elapsed = time.time() - start_time
+            if elapsed < cooldown_s:
+                continue
 
             for model_name, score in prediction.items():
                 if score > tuning["wakeword_log_threshold"]: print(f"[WW] Score: {score:.3f}", flush=True)
