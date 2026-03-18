@@ -266,7 +266,6 @@ async function handleTranscription(transcription: string, speaker: string = "unk
         const local = await handleLocalIntent(intent.category, transcription);
         if (local.handled && local.response) {
             console.log(`[LOCAL] "${local.response}"`);
-            await addMemory(local.response);
             await speakTTS(local.response);
             logInteraction({
                 timestamp: new Date().toISOString(),
@@ -353,7 +352,8 @@ async function handleTranscription(transcription: string, speaker: string = "unk
     }
 
     console.log(`[CLAUDE] Full: "${fullResponse}"`);
-    await addMemory(fullResponse);
+    // Store the user's question in memory (not Diva's response)
+    await addMemory(transcription);
 
     logInteraction({
         timestamp: new Date().toISOString(),

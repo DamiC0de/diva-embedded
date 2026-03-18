@@ -116,6 +116,12 @@ INTENT_RULES_ORDERED = [
         r"\b(\d+\s*(plus|moins|fois|divis[eé])\s+\d*)",
         r"\b(convert|conver[st]i|combien\s+(de|en)\s+(kilo|gramm|m[eè]tre|litre))",
     ]),
+    # Personal memory queries (BEFORE identity — "what do you know about me")
+    ("about_me", [
+        r"\b(qu.est.ce que|que|quoi).*(sais|connais|retenu|souviens).*(sur moi|de moi|me concern)",
+        r"\b(tu\s+(me\s+)?connais|tu\s+sais\s+qui\s+je\s+suis)",
+        r"\b(parle[- ]moi\s+de\s+moi|dis[- ]moi\s+ce\s+que\s+tu\s+sais)",
+    ]),
     # Identity
     ("identity", [
         r"\b(qui\s+(es[- ]tu|[eê]tes.vous)|who\s+are\s+you)",
@@ -180,7 +186,7 @@ def classify_qwen(text):
         "greeting", "goodbye", "shutdown", "time", "weather",
         "home_control", "timer", "music", "calculator", "identity",
         "instruction", "conversational", "speaker_register", "joke",
-        "dnd", "shopping", "radio", "briefing", "routine", "complex",
+        "dnd", "shopping", "radio", "briefing", "routine", "about_me", "complex",
     }
     categories = ", ".join(sorted(valid))
     try:

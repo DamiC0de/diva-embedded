@@ -138,7 +138,7 @@ export async function handleLocalIntent(category: string, text: string): Promise
 
     case "identity": {
       const replies = [
-        "Je suis Diva, ton assistante vocale. Je tourne sur le Rock 5B+ ici meme !",
+        "Je suis Diva, ton assistante vocale familiale !",
         "Moi c'est Diva ! Je suis la pour t'aider au quotidien.",
         "Je m'appelle Diva, assistante vocale de la famille.",
       ];
