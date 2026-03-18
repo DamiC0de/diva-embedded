@@ -465,12 +465,19 @@ async function handleRequest(req, res) {
         if (path === "/api/speakers/delete" && req.method === "POST") {
             try {
                 const body = await readBody(req);
+                const parsed = JSON.parse(body);
+                const name = parsed.name || "";
+                // Delete speaker embedding
                 const r = await fetch("http://localhost:9002/speaker/delete", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body,
                     signal: AbortSignal.timeout(3000),
                 });
+                // Also delete persona file
+                if (name) {
+                    deletePersona(name);
+                }
                 respond(res, r.status, await r.json());
             }
             catch (err) {
