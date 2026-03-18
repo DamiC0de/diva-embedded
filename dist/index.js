@@ -210,6 +210,8 @@ async function conversationLoop() {
 async function handleTranscription(transcription, speaker = "unknown") {
     const t0 = Date.now();
     trackInteraction();
+    // Store every user message in memory (Mem0 extracts personal facts automatically)
+    addMemory(transcription).catch(() => { });
     // Check for repeated questions (Alzheimer tracking)
     const { isRepetition } = checkRepetition(transcription);
     if (isRepetition) {
@@ -296,8 +298,6 @@ async function handleTranscription(transcription, speaker = "unknown") {
         return;
     }
     console.log(`[CLAUDE] Full: "${fullResponse}"`);
-    // Store the user's question in memory (not Diva's response)
-    await addMemory(transcription);
     logInteraction({
         timestamp: new Date().toISOString(),
         speaker,
