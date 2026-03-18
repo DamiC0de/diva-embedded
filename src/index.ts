@@ -106,30 +106,40 @@ async function speakTTS(text: string): Promise<void> {
 }
 
 async function speakTTSStreaming(sentenceQueue: AsyncIterable<string>): Promise<void> {
-    let nextWavPromise: Promise<Buffer> | null = null;
+    // Pipeline: synthesize sentence N+1 while playing sentence N
+    let pendingWav: Promise<Buffer> | null = null;
 
     for await (const sentence of sentenceQueue) {
         if (sentence.trim().length <= 3) continue;
 
-        if (nextWavPromise) {
-            const wavBuffer = await nextWavPromise;
-            // Start synthesizing NEXT sentence before playing current
-            nextWavPromise = synthesize(sentence);
+        if (pendingWav) {
+            // We have a sentence being synthesized — wait for it, then
+            // kick off synthesis of the NEW sentence, then play the ready one
+            const readyWav = await pendingWav;
+            pendingWav = synthesize(sentence); // start next in background
             try {
-                await playAudioBytes(wavBuffer.toString("base64"));
+                await playAudioBytes(readyWav.toString("base64"));
             } catch (err) {
                 console.error("[TTS-STREAM] Play error:", err);
             }
         } else {
-            // First sentence — just start synthesis
-            nextWavPromise = synthesize(sentence);
+            // First sentence — synthesize AND play immediately (no prefetch)
+            try {
+                const wav = await synthesize(sentence);
+                await playAudioBytes(wav.toString("base64"));
+            } catch (err) {
+                console.error("[TTS-STREAM] First sentence error:", err);
+            }
+            // pendingWav stays null — next iteration will be "first" again
+            // unless we get the next sentence fast enough
+            continue;
         }
     }
 
-    // Play the last sentence
-    if (nextWavPromise) {
+    // Play last prefetched sentence
+    if (pendingWav) {
         try {
-            const wavBuffer = await nextWavPromise;
+            const wavBuffer = await pendingWav;
             await playAudioBytes(wavBuffer.toString("base64"));
         } catch (err) {
             console.error("[TTS-STREAM] Final play error:", err);

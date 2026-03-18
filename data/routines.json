@@ -1,0 +1,99 @@
+[
+  {
+    "name": "dodo",
+    "triggerPhrases": [
+      "routine dodo",
+      "routine nuit",
+      "routine bonne nuit"
+    ],
+    "description": "Routine du coucher : baisse volume, lance musique douce, active mode nuit",
+    "actions": [
+      {
+        "type": "speak",
+        "params": {
+          "text": "Bonne nuit ! Je lance la routine dodo."
+        }
+      },
+      {
+        "type": "volume",
+        "params": {
+          "level": "30"
+        }
+      },
+      {
+        "type": "radio_play",
+        "params": {
+          "station": "classique"
+        }
+      },
+      {
+        "type": "dnd",
+        "params": {
+          "durationMin": 480
+        }
+      }
+    ]
+  },
+  {
+    "name": "reveil",
+    "triggerPhrases": [
+      "routine reveil",
+      "routine matin",
+      "routine bonjour"
+    ],
+    "description": "Routine du matin : desactive mode nuit, lance briefing",
+    "actions": [
+      {
+        "type": "speak",
+        "params": {
+          "text": "Bonjour ! Je lance la routine reveil."
+        }
+      },
+      {
+        "type": "radio_stop",
+        "params": {}
+      },
+      {
+        "type": "volume",
+        "params": {
+          "level": "60"
+        }
+      }
+    ]
+  },
+  {
+    "name": "concentration",
+    "triggerPhrases": [
+      "routine concentration",
+      "routine travail",
+      "routine focus"
+    ],
+    "description": "Mode concentration : musique douce, mode DND 2h",
+    "actions": [
+      {
+        "type": "speak",
+        "params": {
+          "text": "Mode concentration active."
+        }
+      },
+      {
+        "type": "volume",
+        "params": {
+          "level": "20"
+        }
+      },
+      {
+        "type": "radio_play",
+        "params": {
+          "station": "jazz"
+        }
+      },
+      {
+        "type": "dnd",
+        "params": {
+          "durationMin": 120
+        }
+      }
+    ]
+  }
+]
