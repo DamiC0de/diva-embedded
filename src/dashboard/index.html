@@ -104,6 +104,18 @@
     .filter-chip { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
     .filter-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
     .log-search { width: 200px; }
+
+    .memory-section { margin-bottom: 16px; }
+    .memory-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .memory-controls select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
+    .memory-list { max-height: 400px; overflow-y: auto; }
+    .memory-item { padding: 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .memory-text { flex: 1; font-size: 0.85rem; line-height: 1.4; }
+    .memory-id { font-size: 0.65rem; color: var(--muted); font-family: monospace; margin-top: 4px; }
+    .memory-empty { color: var(--muted); font-style: italic; padding: 20px; text-align: center; }
+    .memory-add-form { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .memory-add-form input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
+    .memory-count { font-size: 0.75rem; color: var(--muted); }
     .refresh-info { font-size: 0.7rem; color: var(--muted); }
   </style>
 </head>
@@ -165,6 +177,27 @@
   </div>
 
   <!-- Personas -->  <div class="card" style="margin-bottom: 16px;">    <h2>Personas</h2>    <div id="personas"><span class="stat-label">Loading...</span></div>  </div>  <!-- Health / Elderly -->  <div class="grid">    <div class="card">      <h2>Medicaments</h2>      <div id="medCompliance"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Questions Repetees</h2>      <div id="repetitions"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Radio</h2>      <div id="radioStatus"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Liste de Courses</h2>      <div id="shoppingList"><span class="stat-label">Loading...</span></div>    </div>  </div>  <!-- Routines -->  <div class="card" style="margin-bottom: 16px;">    <h2>Routines</h2>    <div id="routines"><span class="stat-label">Loading...</span></div>  </div>
+
+
+  <!-- Memory Manager -->
+  <div class="card memory-section">
+    <h2>Memoires (Mem0)</h2>
+    <div class="memory-controls">
+      <label>Utilisateur:</label>
+      <select id="memoryUserSelect" onchange="loadMemories()">
+        <option value="default">default</option>
+      </select>
+      <button onclick="loadMemories()">Rafraichir</button>
+      <span class="memory-count" id="memoryCount"></span>
+    </div>
+    <div class="memory-list" id="memoryList">
+      <div class="memory-empty">Selectionne un utilisateur</div>
+    </div>
+    <div class="memory-add-form">
+      <input type="text" id="memoryAddInput" placeholder="Ajouter une memoire manuellement (test)...">
+      <button onclick="addMemoryManual()">Ajouter</button>
+    </div>
+  </div>
 
   <!-- Tuning Section -->
   <div class="card" style="margin-bottom: 16px;">
@@ -430,6 +463,8 @@
       fetchSounds();
     initLiveMonitoring();
     fetchAudioTuning();
+    loadMemoryUsers();
+    loadMemories();
     fetchSpeakerTuning();
     fetchSpeakers();
     setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);
@@ -826,6 +861,90 @@
       scrollLogToBottom();
     }
 
+
+    // =====================================================================
+    // MEMORY MANAGER
+    // =====================================================================
+
+    async function loadMemoryUsers() {
+      try {
+        var res = await fetch(API + '/api/memory/users');
+        var data = await res.json();
+        var select = document.getElementById('memoryUserSelect');
+        var current = select.value;
+        select.innerHTML = '';
+        (data.users || ['default']).forEach(function(u) {
+          var opt = document.createElement('option');
+          opt.value = u;
+          opt.textContent = u;
+          if (u === current) opt.selected = true;
+          select.appendChild(opt);
+        });
+      } catch(e) { console.error('Memory users error:', e); }
+    }
+
+    async function loadMemories() {
+      var userId = document.getElementById('memoryUserSelect').value;
+      var listEl = document.getElementById('memoryList');
+      var countEl = document.getElementById('memoryCount');
+      
+      listEl.innerHTML = '<div class="memory-empty">Chargement...</div>';
+      
+      try {
+        var res = await fetch(API + '/api/memory/list?user_id=' + encodeURIComponent(userId));
+        var data = await res.json();
+        var memories = data.memories || [];
+        
+        countEl.textContent = memories.length + ' memoire(s)';
+        
+        if (memories.length === 0) {
+          listEl.innerHTML = '<div class="memory-empty">Aucune memoire pour ' + userId + '</div>';
+          return;
+        }
+        
+        listEl.innerHTML = memories.map(function(m) {
+          var idShort = (m.id || '').substring(0, 8);
+          return '<div class="memory-item">' +
+            '<div>' +
+              '<div class="memory-text">' + escapeHtml(m.memory || '(vide)') + '</div>' +
+              '<div class="memory-id">ID: ' + escapeHtml(m.id || '-') + '</div>' +
+            '</div>' +
+            '<button class="danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteMemory(\'' + (m.id || '') + '\')">X</button>' +
+          '</div>';
+        }).join('');
+      } catch(e) {
+        listEl.innerHTML = '<div class="memory-empty">Erreur: ' + e + '</div>';
+      }
+    }
+
+    async function deleteMemory(memoryId) {
+      if (!memoryId || !confirm('Supprimer cette memoire ?')) return;
+      try {
+        await fetch(API + '/api/memory/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memory_id: memoryId }),
+        });
+        loadMemories();
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function addMemoryManual() {
+      var input = document.getElementById('memoryAddInput');
+      var text = input.value.trim();
+      if (!text) return;
+      var userId = document.getElementById('memoryUserSelect').value;
+      try {
+        await fetch(API + '/api/memory/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, text: text }),
+        });
+        input.value = '';
+        setTimeout(loadMemories, 1000);
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
     function refreshAll() {
       fetchStatus();
       fetchLogs();
@@ -842,6 +961,8 @@
     fetchSounds();
     initLiveMonitoring();
     fetchAudioTuning();
+    loadMemoryUsers();
+    loadMemories();
     fetchSpeakerTuning();
     fetchSpeakers();
     setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);

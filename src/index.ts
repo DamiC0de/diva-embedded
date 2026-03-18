@@ -377,34 +377,13 @@ async function handleTranscription(transcription: string, speaker: string = "unk
 
 async function handleVoiceRegistrationFlow(): Promise<void> {
     try {
-        await speakTTS("D accord, je vais enregistrer ta voix. Dis-moi ton prenom suivi d une phrase.");
-
-        const recorded = await recordAudio({ maxDurationS: 8, silenceTimeoutS: 1.5 });
-        if (!recorded.has_speech || !recorded.wav_base64) {
-            await speakTTS("Je n ai rien entendu. Essaie a nouveau plus tard.");
-            return;
-        }
-
-        // Transcribe to get the name
-        const wavBuffer = Buffer.from(recorded.wav_base64, "base64");
-        const transcription = await transcribeLocal(wavBuffer);
-
-        // Extract first word as name
-        const words = transcription.trim().split(/\s+/);
-        const name = words[0]?.replace(/[^a-zA-ZàâéèêëïîôùûüÿçÀÂÉÈÊËÏÎÔÙÛÜŸÇ]/g, "") || "inconnu";
-
-        // Register with the audio embedding
-        const ok = await completeRegistration(name.toLowerCase(), recorded.wav_base64, "adult", name);
-
-        if (ok) {
-            await speakTTS(`C est note ! Je t ai enregistre sous le nom . Je te reconnaitrai a partir de maintenant.`);
-            setCurrentPersona(name.toLowerCase());
-        } else {
-            await speakTTS("Desole, il y a eu un probleme lors de l enregistrement. Reessaie plus tard.");
+        const result = await runVoiceRegistration();
+        if (result?.success) {
+            setCurrentPersona(result.name);
         }
     } catch (err) {
         console.error("[REGISTER] Error:", err);
-        await speakTTS("Desole, une erreur est survenue.");
+        await speakTTS("Desole, une erreur est survenue pendant l enregistrement.");
     }
 }
 async function main(): Promise<void> {

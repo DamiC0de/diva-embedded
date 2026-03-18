@@ -631,6 +631,94 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
+
+    // =====================================================================
+    // MEMORY — Mem0 viewer / manager
+    // =====================================================================
+
+    // List all users that have memories
+    if (path === "/api/memory/users" && req.method === "GET") {
+      try {
+        // Get speakers + always include "default"
+        const speakersRes = await fetch("http://localhost:9002/speaker/list", { signal: AbortSignal.timeout(3000) });
+        const speakersData = (await speakersRes.json()) as { speakers?: Record<string, unknown> };
+        const users = ["default", ...Object.keys(speakersData.speakers ?? {})];
+        respond(res, 200, { users });
+      } catch {
+        respond(res, 200, { users: ["default"] });
+      }
+      return;
+    }
+
+    // Get all memories for a user
+    if (path === "/api/memory/list" && req.method === "GET") {
+      const userId = url.searchParams.get("user_id") || "default";
+      try {
+        const r = await fetch("http://localhost:9002/memory/all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = (await r.json()) as { memories?: Array<{ memory: string; id: string }> };
+        respond(res, 200, { user_id: userId, memories: data.memories ?? [] });
+      } catch (err) {
+        respond(res, 200, { user_id: userId, memories: [], error: String(err) });
+      }
+      return;
+    }
+
+    // Search memories for a user
+    if (path === "/api/memory/search" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: body.user_id || "default", query: body.query || "" }),
+          signal: AbortSignal.timeout(5000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 200, { memories: [], error: String(err) });
+      }
+      return;
+    }
+
+    // Delete a specific memory
+    if (path === "/api/memory/delete" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory_id: body.memory_id }),
+          signal: AbortSignal.timeout(5000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Add a memory manually (for testing)
+    if (path === "/api/memory/add" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: body.user_id || "default", text: body.text }),
+          signal: AbortSignal.timeout(10000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
     // 404
     respond(res, 404, { error: "Not found" });
   } catch (err) {

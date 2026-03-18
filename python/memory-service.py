@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 
                 # Log all scores for debugging
                 scores_str = ", ".join(f"{n}={s}" for n, s in sorted(all_scores.items(), key=lambda x: -x[1]))
-                print(f"[WeSpeaker] Scores: {scores_str} | threshold={speaker_tuning['identification_threshold']}")
+                print(f"[WeSpeaker] Scores: {scores_str} | threshold={speaker_tuning['identification_threshold']}", flush=True)
                 
                 # Threshold
                 if best_score < speaker_tuning["identification_threshold"]:
@@ -300,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                 if key in speaker_tuning:
                     speaker_tuning[key] = value
             _save_speaker_tuning(speaker_tuning)
-            print(f"[WeSpeaker] Tuning updated: {speaker_tuning}")
+            print(f"[WeSpeaker] Tuning updated: {speaker_tuning}", flush=True)
             self._respond(200, speaker_tuning)
         
         elif self.path == '/speaker/delete':
@@ -311,7 +311,7 @@ class Handler(BaseHTTPRequestHandler):
                 npy_path = os.path.join(SPEAKERS_DIR, f"{name}.npy")
                 if os.path.exists(npy_path):
                     os.unlink(npy_path)
-                print(f"[WeSpeaker] Deleted speaker: {name}")
+                print(f"[WeSpeaker] Deleted speaker: {name}", flush=True)
                 self._respond(200, {"deleted": name})
             else:
                 self._respond(404, {"error": f"Speaker '{name}' not found"})
@@ -349,6 +349,44 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._respond(500, {"error": str(e)})
 
+        elif self.path == '/speaker/register-multi':
+            # Register with MULTIPLE audio samples — computes mean embedding
+            if speaker_model is None:
+                self._respond(500, {"error": "WeSpeaker not initialized"})
+                return
+            
+            name = body.get('name', '')
+            samples = body.get('samples', [])
+            if not name or len(samples) < 2:
+                self._respond(400, {"error": "Need name and at least 2 audio samples"})
+                return
+            
+            try:
+                import numpy as np
+                embeddings = []
+                for i, audio_b64 in enumerate(samples):
+                    audio_bytes = base64.b64decode(audio_b64)
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                        f.write(audio_bytes)
+                        tmp_path = f.name
+                    emb = extract_embedding_onnx(tmp_path)
+                    os.unlink(tmp_path)
+                    embeddings.append(emb)
+                    print(f"[WeSpeaker] Sample {i+1}/{len(samples)} for '{name}': embedding OK (norm={np.linalg.norm(emb):.3f})", flush=True)
+                
+                # Compute mean embedding + L2 normalize
+                mean_emb = np.mean(embeddings, axis=0)
+                mean_emb = mean_emb / np.linalg.norm(mean_emb)
+                
+                # Save
+                np.save(os.path.join(SPEAKERS_DIR, f"{name}.npy"), mean_emb)
+                registered_speakers[name] = mean_emb
+                print(f"[WeSpeaker] Registered '{name}' with {len(embeddings)} samples (mean embedding, L2-normalized)", flush=True)
+                self._respond(200, {"status": "ok", "speaker": name, "samples": len(embeddings)})
+            except Exception as e:
+                print(f"[WeSpeaker] Multi-register error: {e}", flush=True)
+                self._respond(500, {"error": str(e)})
+
         elif self.path == '/speaker/register':
             # Register a new speaker
             if speaker_model is None:
@@ -374,7 +412,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Save embedding
                 np.save(os.path.join(SPEAKERS_DIR, f"{name}.npy"), embedding)
                 registered_speakers[name] = embedding
-                print(f"[WeSpeaker] Registered speaker: {name}")
+                print(f"[WeSpeaker] Registered speaker: {name}", flush=True)
                 self._respond(200, {"status": "ok", "speaker": name})
             except Exception as e:
                 print(f"[WeSpeaker] Register error: {e}")
