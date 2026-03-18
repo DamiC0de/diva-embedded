@@ -291,6 +291,10 @@ def _record_with_vad(
     last_speech_time = time.time()
     start_time = time.time()
 
+    # Drain first 10 frames (~320ms) to clear playback echo from mic buffer
+    for _ in range(10):
+        proc.stdout.read(CHUNK_BYTES)
+
     try:
         while True:
             elapsed = time.time() - start_time

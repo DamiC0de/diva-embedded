@@ -13,6 +13,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from mem0 import Memory
 mem0_config = {
     "version": "v1.1",
+    "custom_prompt": "Tu es un assistant memoire. Extrais et stocke les informations importantes en FRANCAIS uniquement. Ne traduis jamais en anglais. Garde les noms propres tels quels.",
     "llm": {
         "provider": "anthropic",
         "config": {
