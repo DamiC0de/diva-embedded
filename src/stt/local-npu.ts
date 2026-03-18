@@ -24,8 +24,8 @@ const EXACT_HALLUCINATIONS = new Set([
 ]);
 
 const VALID_SHORT_WORDS = new Set([
-  "oui", "non", "ok", "stop", "diva", "bonjour", "salut",
-  "bonsoir", "aide", "répète", "quoi", "encore", "merci",
+  "oui", "non", "ok", "stop", "diva", "bonjour", "salut", "ciao", "bye",
+  "bonsoir", "aide", "répète", "quoi", "encore", "merci", "tais", "mets", "joue", "plus",
 ]);
 
 let lastTranscription = "";
