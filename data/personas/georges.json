@@ -1,0 +1,18 @@
+{
+  "id": "georges",
+  "name": "Georges",
+  "greetingName": "Georges",
+  "type": "adult",
+  "allowedIntents": "all",
+  "blockedIntents": [],
+  "promptPrefix": "Ton, vocabulaire neutre et efficace. Reponses concises.",
+  "ttsConfig": {
+    "lengthScale": 1,
+    "pauseBetweenSentences": 200
+  },
+  "contentFilter": "none",
+  "morningBriefing": true,
+  "medicationReminders": false,
+  "proactiveCheckins": false,
+  "aidantContacts": []
+}

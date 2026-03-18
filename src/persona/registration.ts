@@ -1,12 +1,9 @@
 /**
- * Voice Registration Flow — guided vocal enrollment with multiple samples
+ * Voice Registration Flow — simple guided enrollment
  * 
- * "Diva, enregistre ma voix" → 5 diverse phrases → WeSpeaker mean embedding
- * 
- * Uses varied prompts to capture full prosody range:
- * - Declarative, interrogative, exclamative, whispery, fast speech
- * - Each sample > 2s for good embedding quality
- * - Mean of all embeddings = robust speaker profile
+ * Like Alexa/Google: user repeats fixed phrases. No open questions.
+ * 5 phrases designed to cover full prosody (vowels, consonants,
+ * intonation, rhythm, nasal sounds specific to French).
  */
 
 import {
@@ -19,12 +16,13 @@ import { createPersona, type PersonaType } from "./engine.js";
 
 const MEM0_URL = "http://localhost:9002";
 
-const REGISTRATION_PROMPTS = [
-    "Dis-moi ton prenom, puis raconte ce que tu as fait aujourd'hui. Parle normalement, au moins trois phrases.",
-    "Maintenant, pose-moi une question, n'importe laquelle. Par exemple, est-ce qu'il va pleuvoir demain ?",
-    "Parfait. Cette fois, raconte-moi quelque chose qui te fait plaisir, avec enthousiasme !",
-    "Tres bien. Maintenant lis cette phrase a voix haute : le petit chat est monte sur le toit et a regarde les etoiles toute la nuit.",
-    "Dernier enregistrement. Dis-moi ce que tu veux, parle librement pendant quelques secondes.",
+// Fixed phrases — user just repeats them. Covers full French prosody.
+const ENROLLMENT_PHRASES = [
+    "Repete apres moi : Diva, quelle heure est-il ?",
+    "Repete : Le soleil brille aujourd'hui, il fait vraiment tres beau dehors.",
+    "Repete : Est-ce que tu peux me raconter une blague s'il te plait ?",
+    "Repete : Ma grand-mere fait un excellent gateau au chocolat le dimanche.",
+    "Et la derniere : Je voudrais ecouter de la musique classique ce soir.",
 ];
 
 async function speak(text: string): Promise<void> {
@@ -33,7 +31,6 @@ async function speak(text: string): Promise<void> {
 }
 
 async function registerSpeakerEmbeddings(name: string, audioSamples: string[]): Promise<boolean> {
-    // Register each sample as a separate embedding, let Python compute the mean
     try {
         const res = await fetch(`${MEM0_URL}/speaker/register-multi`, {
             method: "POST",
@@ -41,13 +38,8 @@ async function registerSpeakerEmbeddings(name: string, audioSamples: string[]): 
             body: JSON.stringify({ name, samples: audioSamples }),
             signal: AbortSignal.timeout(30000),
         });
-        if (res.ok) {
-            const data = await res.json() as { status?: string };
-            console.log(`[REGISTER] Multi-sample registration: ${data.status}`);
-            return true;
-        }
-        // Fallback: register with longest sample only
-        console.warn("[REGISTER] Multi-sample failed, using single best sample");
+        if (res.ok) return true;
+        // Fallback: longest sample
         const best = audioSamples.reduce((a, b) => a.length > b.length ? a : b);
         const res2 = await fetch(`${MEM0_URL}/speaker/register`, {
             method: "POST",
@@ -62,130 +54,84 @@ async function registerSpeakerEmbeddings(name: string, audioSamples: string[]): 
     }
 }
 
-/**
- * Run the full voice registration flow.
- * Returns { name, success } or null if aborted.
- */
 export async function runVoiceRegistration(): Promise<{ name: string; success: boolean } | null> {
-    await speak("D'accord, je vais enregistrer ta voix. Ca prend environ une minute. Je vais te demander de dire cinq phrases differentes pour bien reconnaitre ta voix.");
+    // Step 1: Ask name
+    await speak("D'accord. Comment tu t'appelles ?");
 
+    const nameRec = await recordAudio({ maxDurationS: 8, silenceTimeoutS: 1.5 });
+    if (!nameRec.has_speech || !nameRec.wav_base64) {
+        await speak("Je n'ai rien entendu. Reessaie plus tard.");
+        return null;
+    }
+
+    const nameWav = Buffer.from(nameRec.wav_base64, "base64");
+    const nameText = await transcribeLocal(nameWav);
+    const detectedName = extractName(nameText) || nameText.trim().split(/\s+/)[0] || "utilisateur";
+    const cleanName = detectedName.toLowerCase().replace(/[^a-zàâéèêëïîôùûüÿç]/g, "");
+
+    await speak(`OK ${detectedName}. Je vais te demander de repeter cinq phrases. C'est rapide.`);
+
+    // Step 2: Collect 5 fixed phrases
     const audioSamples: string[] = [];
-    let detectedName = "";
+    // Include the name recording as first sample (has natural speech)
+    audioSamples.push(nameRec.wav_base64);
 
-    for (let i = 0; i < REGISTRATION_PROMPTS.length; i++) {
-        await speak(REGISTRATION_PROMPTS[i]);
+    for (let i = 0; i < ENROLLMENT_PHRASES.length; i++) {
+        await speak(ENROLLMENT_PHRASES[i]);
 
         const recorded = await recordAudio({
-            maxDurationS: 15,     // Allow longer recordings for natural speech
-            silenceTimeoutS: 2.0, // More patience — user needs time to think
+            maxDurationS: 10,
+            silenceTimeoutS: 1.5,
         });
 
         if (!recorded.has_speech || !recorded.wav_base64) {
-            await speak("Je n'ai rien entendu. On reessaie.");
-            // Retry once
-            const retry = await recordAudio({
-                maxDurationS: 15,
-                silenceTimeoutS: 2.0,
-            });
+            // Retry once silently
+            await speak("Je n'ai pas entendu, repete.");
+            const retry = await recordAudio({ maxDurationS: 10, silenceTimeoutS: 1.5 });
             if (!retry.has_speech || !retry.wav_base64) {
-                await speak("Toujours rien. On arrete l'enregistrement pour le moment.");
-                return null;
+                await speak("On va continuer avec ce qu'on a.");
+                continue;
             }
             audioSamples.push(retry.wav_base64);
-
-            // Extract name from first sample
-            if (i === 0) {
-                const wav = Buffer.from(retry.wav_base64, "base64");
-                const text = await transcribeLocal(wav);
-                detectedName = extractName(text);
-            }
-            continue;
-        }
-
-        audioSamples.push(recorded.wav_base64);
-
-        // Extract name from first sample
-        if (i === 0) {
-            const wav = Buffer.from(recorded.wav_base64, "base64");
-            const text = await transcribeLocal(wav);
-            detectedName = extractName(text);
-            if (detectedName) {
-                await speak(`OK ${detectedName}, c'est note. On continue.`);
-            } else {
-                await speak("C'est note. On continue.");
-            }
-        } else if (i < REGISTRATION_PROMPTS.length - 1) {
-            const confirmations = ["Parfait.", "Tres bien.", "Super.", "C'est note."];
-            await speak(confirmations[i % confirmations.length]);
+        } else {
+            audioSamples.push(recorded.wav_base64);
         }
     }
 
     if (audioSamples.length < 3) {
-        await speak("Pas assez d'echantillons pour un bon enregistrement. Reessaie plus tard.");
+        await speak("Pas assez d'enregistrements. Reessaie plus tard.");
         return null;
     }
 
-    // If no name detected, ask explicitly
-    if (!detectedName) {
-        await speak("Comment veux-tu que je t'appelle ?");
-        const nameRec = await recordAudio({ maxDurationS: 5, silenceTimeoutS: 1.5 });
-        if (nameRec.has_speech && nameRec.wav_base64) {
-            const wav = Buffer.from(nameRec.wav_base64, "base64");
-            const text = await transcribeLocal(wav);
-            detectedName = extractName(text) || text.trim().split(/\s+/)[0] || "utilisateur";
-        } else {
-            detectedName = "utilisateur";
-        }
-    }
+    // Step 3: Register
+    await speak("Merci ! Enregistrement en cours.");
 
-    const name = detectedName.toLowerCase().replace(/[^a-zàâéèêëïîôùûüÿç]/g, "");
-    
-    await speak(`Enregistrement en cours pour ${detectedName}, ca prend quelques secondes.`);
-
-    // Register with all samples
-    const success = await registerSpeakerEmbeddings(name, audioSamples);
+    const success = await registerSpeakerEmbeddings(cleanName, audioSamples);
 
     if (success) {
-        // Create persona profile
-        createPersona(name, detectedName, "adult", detectedName);
-        await speak(`C'est fait ! Je t'ai enregistre sous le nom ${detectedName}. Je te reconnaitrai a partir de maintenant.`);
-        return { name, success: true };
+        createPersona(cleanName, detectedName, "adult", detectedName);
+        await speak(`Termine ! Je te reconnaitrai maintenant, ${detectedName}.`);
+        return { name: cleanName, success: true };
     } else {
-        await speak("Desole, il y a eu un probleme. Reessaie plus tard.");
-        return { name, success: false };
+        await speak("Il y a eu un souci. Reessaie plus tard.");
+        return { name: cleanName, success: false };
     }
 }
 
 function extractName(text: string): string {
     if (!text) return "";
-    
-    // Common patterns: "Je m'appelle X", "Moi c'est X", "C'est X", just "X"
     const patterns = [
         /(?:je\s+m'appelle|moi\s+c'est|c'est|je\s+suis)\s+([A-ZÀ-Ü][a-zà-ü]+)/i,
-        /^([A-ZÀ-Ü][a-zà-ü]+)[\s,]/,  // First word if capitalized
+        /^([A-ZÀ-Ü][a-zà-ü]+)[\s,!.]/,
     ];
-    
     for (const pat of patterns) {
         const m = text.match(pat);
-        if (m && m[1] && m[1].length >= 2 && m[1].length <= 20) {
-            return m[1];
-        }
+        if (m?.[1] && m[1].length >= 2 && m[1].length <= 20) return m[1];
     }
-    
-    // Fallback: first word that looks like a name
     const words = text.trim().split(/[\s,!.?]+/);
-    for (const w of words) {
-        if (w.length >= 2 && w.length <= 15 && /^[A-ZÀ-Ü]/.test(w)) {
-            return w;
-        }
-    }
-    
     return words[0]?.replace(/[^a-zA-ZàâéèêëïîôùûüÿçÀÂÉÈÊËÏÎÔÙÛÜŸÇ]/g, "") || "";
 }
 
-/**
- * Complete registration with speaker name and audio (used by dashboard/API).
- */
 export async function completeRegistration(
     speakerName: string,
     audioB64: string,
@@ -202,7 +148,5 @@ export async function completeRegistration(
         if (!res.ok) return false;
         createPersona(speakerName, speakerName, type, greetingName ?? speakerName);
         return true;
-    } catch {
-        return false;
-    }
+    } catch { return false; }
 }
