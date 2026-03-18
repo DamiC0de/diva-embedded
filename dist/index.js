@@ -146,6 +146,10 @@ async function idleLoop() {
 async function conversationLoop() {
     let isFirstTurn = true;
     while (true) {
+        // Beep to signal "your turn to speak"
+        if (!isFirstTurn) {
+            await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+        }
         console.log("[REC] Enregistrement en cours...");
         const recorded = await recordAudio({
             maxDurationS: 10,
@@ -324,7 +328,7 @@ async function handleVoiceRegistrationFlow() {
     }
     catch (err) {
         console.error("[REGISTER] Error:", err);
-        await speakTTS("Desole, une erreur est survenue pendant l enregistrement.");
+        await speakTTS("Désolé, une erreur est survenue pendant l'enregistrement.");
     }
 }
 async function main() {

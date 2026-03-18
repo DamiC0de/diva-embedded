@@ -1,9 +1,6 @@
 /**
  * Voice Registration Flow — simple guided enrollment
- *
- * Like Alexa/Google: user repeats fixed phrases. No open questions.
- * 5 phrases designed to cover full prosody (vowels, consonants,
- * intonation, rhythm, nasal sounds specific to French).
+ * User repeats fixed phrases covering full French prosody.
  */
 import { type PersonaType } from "./engine.js";
 export declare function runVoiceRegistration(): Promise<{

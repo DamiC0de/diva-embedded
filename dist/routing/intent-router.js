@@ -122,7 +122,7 @@ export async function handleLocalIntent(category, text) {
             if (h >= 20 || h < 5) {
                 return { handled: true, response: "Bonne nuit ! Dors bien." };
             }
-            const replies = ["A plus tard !", "Ciao !", "A bientot !"];
+            const replies = ["À plus tard !", "Ciao !", "À bientôt !"];
             return { handled: true, response: replies[Math.floor(Math.random() * replies.length)] };
         }
         case "identity": {
@@ -139,21 +139,21 @@ export async function handleLocalIntent(category, text) {
         case "conversational": {
             const t = text.toLowerCase();
             if (/comment.*(vas?|va|allez)/i.test(t) || /[çc]a va/i.test(t)) {
-                const r = ["Ca va bien merci!", "Nickel!", "Tout roule!"];
+                const r = ["Ça va bien, merci !", "Nickel!", "Tout roule !"];
                 return { handled: true, response: r[Math.floor(Math.random() * r.length)] };
             }
             if (/merci/i.test(t)) {
-                const r = ["De rien!", "Pas de quoi!", "A ton service!"];
+                const r = ["De rien !", "Pas de quoi !", "À ton service !"];
                 return { handled: true, response: r[Math.floor(Math.random() * r.length)] };
             }
             if (/super|genial|cool|parfait/i.test(t)) {
-                return { handled: true, response: "Content que ca te plaise!" };
+                return { handled: true, response: "Content que ça te plaise !" };
             }
             if (/oui|ok|d.accord|exactement/i.test(t)) {
                 return { handled: true, response: "OK!" };
             }
             if (/non|pas|rien/i.test(t)) {
-                return { handled: true, response: "D accord, pas de souci." };
+                return { handled: true, response: "D'accord, pas de souci." };
             }
             if (/c.est (tout|bon)/i.test(t)) {
                 return { handled: true, response: "OK, je reste la si besoin!" };

@@ -115,14 +115,14 @@ async function companionshipCheckin() {
             // Simple mood detection
             const lower = response.toLowerCase();
             if (/bien|super|ca va|forme|content/i.test(lower)) {
-                await speakProactive("Tant mieux ! N'hesitez pas si vous avez besoin de quelque chose.");
+                await speakProactive("Tant mieux ! N'hésitez pas si vous avez besoin de quelque chose.");
             }
             else if (/mal|pas bien|fatigue|triste|seul/i.test(lower)) {
-                await speakProactive("Je suis desolee d'entendre ca. Je suis la pour vous. Voulez-vous qu'on discute un peu ?");
+                await speakProactive("Je suis désolée d'entendre ça. Je suis là pour vous. Voulez-vous qu'on discute un peu ?");
                 addWellnessNote("Mood: negative");
             }
             else {
-                await speakProactive("D'accord ! Je suis la si vous avez besoin.");
+                await speakProactive("D'accord ! Je suis là si vous avez besoin.");
             }
         }
         else {

@@ -127,7 +127,7 @@ async function deliverReminder(reminder: PendingReminder): Promise<void> {
 
   if (confirmed) {
     console.log(`[MED] Confirmed: ${name}`);
-    await speakProactive("Tres bien, c'est note !");
+    await speakProactive("Très bien, c'est noté !");
     logMedication(config.id, reminder.scheduledTime, "taken", new Date().toISOString());
     pendingReminders.delete(config.id);
   } else {
@@ -183,7 +183,7 @@ async function checkReminders(): Promise<void> {
       await speakProactive(`Petit rappel : n'oubliez pas votre ${reminder.config.name}.`);
       const confirmed = await listenForConfirmation();
       if (confirmed) {
-        await speakProactive("Parfait, c'est note !");
+        await speakProactive("Parfait, c'est noté !");
         logMedication(reminder.config.id, reminder.scheduledTime, "taken", new Date().toISOString());
         pendingReminders.delete(id);
       }
