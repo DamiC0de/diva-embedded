@@ -12,6 +12,8 @@ import { playRadio, stopRadio, setVolume, listStations } from "../tools/radio.js
 import { generateBriefing } from "../tools/morning-briefing.js";
 import { findRoutine, executeRoutine, listRoutines } from "../tools/routines.js";
 import { handleHomeCommand } from "../smarthome/ha-connector.js";
+import { getCurrentPersona } from "../persona/engine.js";
+import { searchMemory, getCurrentUser } from "../tools/memory-tool.js";
 const INTENT_URL = process.env.INTENT_URL ?? "http://localhost:8882";
 // Restore timers on module load
 restoreTimers().catch((err) => console.error("[Router] Timer restore failed:", err));
@@ -321,6 +323,26 @@ export async function handleLocalIntent(category, text) {
                 return { handled: true, response: setVolume(text) };
             }
             return { handled: true, response: playRadio(text) };
+        }
+        case "about_me": {
+            const persona = getCurrentPersona();
+            const userId = getCurrentUser();
+            const memories = await searchMemory(text);
+            const parts = [];
+            if (persona.greetingName && persona.id !== "guest") {
+                parts.push("Tu t'appelles " + persona.greetingName + ".");
+            }
+            if (memories.length > 0) {
+                const memTexts = memories.slice(0, 3).map(m => m.memory);
+                parts.push("Je sais aussi que : " + memTexts.join(". ") + ".");
+            }
+            else if (parts.length > 0) {
+                parts.push("Pour le reste, on n'a pas encore beaucoup discuté, mais ça viendra !");
+            }
+            else {
+                return { handled: true, response: "Je ne te connais pas encore. Dis-moi des choses sur toi et je m'en souviendrai !" };
+            }
+            return { handled: true, response: parts.join(" ") };
         }
         case "home_control": {
             const result = await handleHomeCommand(text);

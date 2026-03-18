@@ -169,7 +169,7 @@ for intent_name, patterns in INTENT_RULES_ORDERED:
 LOCAL_CATS = {
     "greeting", "goodbye", "shutdown", "time", "identity",
     "conversational", "calculator", "timer", "weather",
-    "speaker_register", "joke", "dnd", "shopping", "radio", "briefing", "routine",
+    "speaker_register", "joke", "dnd", "shopping", "radio", "briefing", "routine", "about_me",
 }
 
 def classify_regex(text):
