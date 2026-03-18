@@ -1,6 +1,6 @@
 /**
- * STT — Local SenseVoice NPU on port 8881 with Groq Cloud fallback
- * Circuit breaker: if NPU fails 3 times → auto-switch to Groq for 30s
+ * STT — Groq Whisper (primary, French) with SenseVoice NPU fallback (zh/en/ja/ko)
+ * Circuit breaker: if Groq fails 3 times → auto-switch to NPU for 60s
  */
 import { withCircuitBreaker } from "../tools/circuit-breaker.js";
 const STT_LOCAL_URL = process.env.STT_LOCAL_URL ?? "http://localhost:8881/v1/audio/transcriptions";
@@ -110,7 +110,8 @@ async function transcribeGroq(wavBuffer) {
 // --- Main transcription function with circuit breaker ---
 export async function transcribeLocal(wavBuffer) {
     try {
-        const rawText = await withCircuitBreaker("stt", () => transcribeNPU(wavBuffer), () => transcribeGroq(wavBuffer), { failureThreshold: 3, resetTimeoutMs: 30000 });
+        // Groq Whisper = primary (supports French), NPU SenseVoice = fallback (zh/en/ja/ko only)
+        const rawText = await withCircuitBreaker("stt", () => transcribeGroq(wavBuffer), () => transcribeNPU(wavBuffer), { failureThreshold: 3, resetTimeoutMs: 60000 });
         let result = cleanHallucinations(rawText);
         if (result && isRepeatOfPrevious(result)) {
             console.log(`  [REPEAT] Rejeté: "${result}"`);

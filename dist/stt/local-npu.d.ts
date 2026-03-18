@@ -1,6 +1,6 @@
 /**
- * STT — Local SenseVoice NPU on port 8881 with Groq Cloud fallback
- * Circuit breaker: if NPU fails 3 times → auto-switch to Groq for 30s
+ * STT — Groq Whisper (primary, French) with SenseVoice NPU fallback (zh/en/ja/ko)
+ * Circuit breaker: if Groq fails 3 times → auto-switch to NPU for 60s
  */
 export declare function transcribeLocal(wavBuffer: Buffer): Promise<string>;
 //# sourceMappingURL=local-npu.d.ts.map
