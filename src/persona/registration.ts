@@ -30,7 +30,7 @@ async function speak(text: string): Promise<void> {
 
 /** Play the "your turn" beep then record */
 async function listenWithBeep(maxDurationS: number = 10, silenceTimeoutS: number = 1.5): Promise<{ has_speech: boolean; wav_base64?: string; duration_ms?: number }> {
-    await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+    await playAudioFile(`${ASSETS_DIR}/listen.wav`);
     return recordAudio({ maxDurationS, silenceTimeoutS });
 }
 

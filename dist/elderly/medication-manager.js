@@ -53,7 +53,7 @@ function logMedication(medicationId, scheduledTime, status, confirmedAt) {
 }
 async function speakProactive(text) {
     try {
-        await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+        await playAudioFile(`${ASSETS_DIR}/listen.wav`);
         const wav = await synthesize(text);
         await playAudioBytes(wav.toString("base64"));
     }

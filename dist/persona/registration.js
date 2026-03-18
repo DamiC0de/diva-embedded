@@ -21,7 +21,7 @@ async function speak(text) {
 }
 /** Play the "your turn" beep then record */
 async function listenWithBeep(maxDurationS = 10, silenceTimeoutS = 1.5) {
-    await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+    await playAudioFile(`${ASSETS_DIR}/listen.wav`);
     return recordAudio({ maxDurationS, silenceTimeoutS });
 }
 async function registerSpeakerEmbeddings(name, audioSamples) {

@@ -85,7 +85,7 @@ function logMedication(medicationId: string, scheduledTime: string, status: "tak
 
 async function speakProactive(text: string): Promise<void> {
   try {
-    await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+    await playAudioFile(`${ASSETS_DIR}/listen.wav`);
     const wav = await synthesize(text);
     await playAudioBytes(wav.toString("base64"));
   } catch (err) {

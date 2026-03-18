@@ -56,7 +56,7 @@ async function speakProactive(text) {
         return;
     }
     try {
-        await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+        await playAudioFile(`${ASSETS_DIR}/listen.wav`);
         const wav = await synthesize(text, 1.2); // Slightly slower for proactive
         await playAudioBytes(wav.toString("base64"));
     }

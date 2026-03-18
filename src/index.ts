@@ -180,7 +180,7 @@ async function conversationLoop(): Promise<void> {
     while (true) {
         // Beep to signal "your turn to speak"
         if (!isFirstTurn) {
-            await playAudioFile(`${ASSETS_DIR}/oui.wav`);
+            await playAudioFile(`${ASSETS_DIR}/listen.wav`);
         }
         console.log("[REC] Enregistrement en cours...");
         const recorded = await recordAudio({
