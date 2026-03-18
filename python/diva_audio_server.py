@@ -34,11 +34,42 @@ CHANNELS = 1
 
 # Wake word
 WAKEWORD_MODEL_PATH = "/opt/diva-embedded/assets/diva_fr.onnx"
-WAKEWORD_THRESHOLD = 0.7
 
-# VAD
-SILENCE_TIMEOUT_S = 0.8
-MIN_SPEECH_MS = 300
+# --- Tunable config (loaded from JSON, modifiable via API) ---
+import json as _json
+_TUNING_PATH = "/opt/diva-embedded/data/tuning.json"
+_DEFAULT_TUNING = {
+    "wakeword_threshold": 0.7,
+    "wakeword_drain_frames": 20,
+    "vad_silence_timeout_s": 0.8,
+    "vad_min_speech_ms": 300,
+    "vad_speech_prob_threshold": 0.5,
+    "wakeword_log_threshold": 0.5,
+    "record_max_wait_s": 5.0,
+    "post_play_delay_s": 0.3,
+    "post_wakeword_delay_s": 0.5,
+}
+
+def _load_tuning():
+    try:
+        with open(_TUNING_PATH) as f:
+            saved = _json.load(f)
+            merged = {**_DEFAULT_TUNING, **saved}
+            return merged
+    except Exception:
+        return dict(_DEFAULT_TUNING)
+
+def _save_tuning(cfg):
+    with open(_TUNING_PATH, "w") as f:
+        _json.dump(cfg, f, indent=2)
+
+tuning = _load_tuning()
+_save_tuning(tuning)  # ensure file exists with all keys
+
+# Legacy aliases for backward compat
+WAKEWORD_THRESHOLD = tuning["wakeword_threshold"]
+SILENCE_TIMEOUT_S = tuning["vad_silence_timeout_s"]
+MIN_SPEECH_MS = tuning["vad_min_speech_ms"]
 
 
 # === GLOBALS (initialisés au démarrage) ===
@@ -144,7 +175,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
     """Écoute le micro en continu et retourne quand le wake word est détecté."""
     # Reset le modèle et drain le buffer audio
     oww_model.reset()
-    time.sleep(0.5)  # Laisser le buffer se vider après playback
+    time.sleep(tuning["post_wakeword_delay_s"])  # Laisser le buffer se vider après playback
     proc = subprocess.Popen(
         [
             "arecord", "-D", ALSA_DEVICE,
@@ -159,7 +190,7 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
     CHUNK_BYTES = CHUNK_SAMPLES * 2
 
     # Drain: lire et jeter 20 frames (~1.6s) pour vider l'écho résiduel
-    for _ in range(20):
+    for _ in range(tuning["wakeword_drain_frames"]):
         proc.stdout.read(CHUNK_BYTES)
     oww_model.reset()  # Reset après drain
 
@@ -184,8 +215,8 @@ def _wakeword_listen(timeout_s: float) -> dict | None:
             prediction = oww_model.predict(audio)
 
             for model_name, score in prediction.items():
-                if score > 0.5: print(f"[WW] Score: {score:.3f}", flush=True)
-                if score >= WAKEWORD_THRESHOLD:
+                if score > tuning["wakeword_log_threshold"]: print(f"[WW] Score: {score:.3f}", flush=True)
+                if score >= tuning["wakeword_threshold"]:
                     oww_model.reset()
                     return {"score": float(score), "model": model_name}
 
@@ -272,7 +303,7 @@ def _record_with_vad(
             # VAD check
             speech_prob = vad_model(audio_tensor, SAMPLE_RATE).item()
 
-            if speech_prob > 0.5:
+            if speech_prob > tuning["vad_speech_prob_threshold"]:
                 speech_started = True
                 last_speech_time = time.time()
                 all_audio.extend(raw)
@@ -282,7 +313,7 @@ def _record_with_vad(
                     break
             else:
                 # Pas encore de parole
-                if elapsed > 5.0:
+                if elapsed > tuning["record_max_wait_s"]:
                     return None
 
     finally:
@@ -338,7 +369,7 @@ def _play_wav_safe(wav_path: str):
             ["aplay", "-D", ALSA_DEVICE, wav_path],
             capture_output=True, timeout=30
         )
-        time.sleep(0.3)  # Laisser l'écho se dissiper avant unmute
+        time.sleep(tuning["post_play_delay_s"])  # Laisser l'écho se dissiper avant unmute
     finally:
         _unmute_mic()
 
@@ -378,6 +409,36 @@ def _unmute_mic():
     global is_muted
     is_muted = False
     time.sleep(0.1)  # Wait for audio buffer to clear
+
+
+
+
+# =====================================================================
+# ENDPOINT : /tuning (GET = read, POST = update)
+# =====================================================================
+
+@app.get("/tuning")
+async def get_tuning():
+    """Return current tuning parameters."""
+    return tuning
+
+@app.post("/tuning")
+async def update_tuning(new_values: dict):
+    """Update tuning parameters. Only known keys are accepted."""
+    updated = []
+    for key, value in new_values.items():
+        if key in tuning:
+            tuning[key] = value
+            updated.append(key)
+    if updated:
+        # Update legacy aliases
+        global WAKEWORD_THRESHOLD, SILENCE_TIMEOUT_S, MIN_SPEECH_MS
+        WAKEWORD_THRESHOLD = tuning["wakeword_threshold"]
+        SILENCE_TIMEOUT_S = tuning["vad_silence_timeout_s"]
+        MIN_SPEECH_MS = tuning["vad_min_speech_ms"]
+        _save_tuning(tuning)
+        print(f"[TUNING] Updated: {updated}")
+    return {"updated": updated, "tuning": tuning}
 
 
 # =====================================================================

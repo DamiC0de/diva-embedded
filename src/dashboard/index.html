@@ -65,6 +65,22 @@
     .svc-detail:last-child { border-bottom: none; }
     .svc-info { display: flex; flex-direction: column; gap: 2px; }
     .svc-meta { font-size: 0.7rem; color: var(--muted); }
+
+    .tuning-section { margin-bottom: 24px; }
+    .tuning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .tuning-param { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .tuning-param:last-child { border-bottom: none; }
+    .tuning-label { flex: 1; }
+    .tuning-desc { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+    .tuning-input { width: 90px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; text-align: right; }
+    .tuning-input:focus { border-color: var(--accent); outline: none; }
+    .tuning-range { width: 120px; accent-color: var(--accent); }
+    .tuning-value { font-family: monospace; font-size: 0.85rem; color: var(--accent); min-width: 50px; text-align: right; }
+    .speaker-card { display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; }
+    .speaker-name { font-weight: 600; }
+    .speaker-actions button { margin-left: 6px; padding: 3px 8px; font-size: 0.7rem; }
+    .apply-btn { background: var(--accent); margin-top: 12px; }
+    .section-subtitle { font-size: 0.85rem; color: var(--accent); margin: 12px 0 6px; font-weight: 600; }
     .refresh-info { font-size: 0.7rem; color: var(--muted); }
   </style>
 </head>
@@ -126,6 +142,92 @@
   </div>
 
   <!-- Personas -->  <div class="card" style="margin-bottom: 16px;">    <h2>Personas</h2>    <div id="personas"><span class="stat-label">Loading...</span></div>  </div>  <!-- Health / Elderly -->  <div class="grid">    <div class="card">      <h2>Medicaments</h2>      <div id="medCompliance"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Questions Repetees</h2>      <div id="repetitions"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Radio</h2>      <div id="radioStatus"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Liste de Courses</h2>      <div id="shoppingList"><span class="stat-label">Loading...</span></div>    </div>  </div>  <!-- Routines -->  <div class="card" style="margin-bottom: 16px;">    <h2>Routines</h2>    <div id="routines"><span class="stat-label">Loading...</span></div>  </div>
+
+  <!-- Tuning Section -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Reglages Audio / Wake Word / VAD</h2>
+    <p class="stat-label" style="margin-bottom: 12px;">Parametres appliques a chaud (pas besoin de redemarrer)</p>
+    
+    <div class="tuning-grid">
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Wake Word</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil de detection<div class="tuning-desc">Plus bas = plus sensible mais plus de faux positifs (0.3-0.9)</div></div>
+          <input type="range" class="tuning-range" id="t_wakeword_threshold" min="0.3" max="0.95" step="0.05" oninput="document.getElementById('v_wakeword_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_wakeword_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil log score<div class="tuning-desc">Affiche le score dans les logs au dessus de cette valeur</div></div>
+          <input type="range" class="tuning-range" id="t_wakeword_log_threshold" min="0.1" max="0.9" step="0.05" oninput="document.getElementById('v_wakeword_log_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_wakeword_log_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Frames drain post-playback<div class="tuning-desc">Nombre de frames ignorees apres un playback (anti-echo). 20 = ~1.6s</div></div>
+          <input type="number" class="tuning-input" id="t_wakeword_drain_frames" min="5" max="50" step="5">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Delai post-wakeword (s)<div class="tuning-desc">Pause apres detection WW avant ecoute (vider buffer)</div></div>
+          <input type="number" class="tuning-input" id="t_post_wakeword_delay_s" min="0.1" max="2" step="0.1">
+        </div>
+      </div>
+
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">VAD (Voice Activity Detection)</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil silence fin de parole (s)<div class="tuning-desc">Duree de silence avant de considerer que l'utilisateur a fini. Plus bas = plus rapide</div></div>
+          <input type="range" class="tuning-range" id="t_vad_silence_timeout_s" min="0.3" max="2.0" step="0.1" oninput="document.getElementById('v_vad_silence_timeout_s').textContent=this.value+'s'">
+          <span class="tuning-value" id="v_vad_silence_timeout_s">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Duree min parole (ms)<div class="tuning-desc">Audio ignore si plus court que ca (anti-bruit)</div></div>
+          <input type="number" class="tuning-input" id="t_vad_min_speech_ms" min="100" max="1000" step="50">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil probabilite parole<div class="tuning-desc">Silero VAD: probabilite au dessus de laquelle on considere que c'est de la parole (0.3-0.8)</div></div>
+          <input type="range" class="tuning-range" id="t_vad_speech_prob_threshold" min="0.2" max="0.8" step="0.05" oninput="document.getElementById('v_vad_speech_prob_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_vad_speech_prob_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Attente max sans parole (s)<div class="tuning-desc">Timeout si aucune parole detectee apres WW</div></div>
+          <input type="number" class="tuning-input" id="t_record_max_wait_s" min="2" max="15" step="1">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Delai post-play (s)<div class="tuning-desc">Pause apres lecture audio avant de reactiverle micro (anti-echo)</div></div>
+          <input type="range" class="tuning-range" id="t_post_play_delay_s" min="0.1" max="1.0" step="0.05" oninput="document.getElementById('v_post_play_delay_s').textContent=this.value+'s'">
+          <span class="tuning-value" id="v_post_play_delay_s">-</span>
+        </div>
+      </div>
+    </div>
+    <button class="apply-btn" onclick="applyAudioTuning()">Appliquer les reglages audio</button>
+  </div>
+
+  <!-- Speaker ID Tuning -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Identification Vocale (WeSpeaker)</h2>
+    
+    <div class="tuning-grid">
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Parametres</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil d'identification<div class="tuning-desc">Cosine similarity minimum pour reconnaitre un locuteur (0.1-0.8). Plus bas = plus permissif</div></div>
+          <input type="range" class="tuning-range" id="t_identification_threshold" min="0.1" max="0.8" step="0.05" oninput="document.getElementById('v_identification_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_identification_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Confiance auto-switch<div class="tuning-desc">Confiance minimum pour changer automatiquement de persona</div></div>
+          <input type="range" class="tuning-range" id="t_auto_switch_confidence" min="0.1" max="0.9" step="0.05" oninput="document.getElementById('v_auto_switch_confidence').textContent=this.value">
+          <span class="tuning-value" id="v_auto_switch_confidence">-</span>
+        </div>
+        <button class="apply-btn" onclick="applySpeakerTuning()">Appliquer</button>
+      </div>
+
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Voix enregistrees</div>
+        <div id="speakersList"><span class="stat-label">Chargement...</span></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Interaction Logs -->
   <div class="card">
     <h2>Interactions Recentes</h2>
@@ -283,6 +385,9 @@
       form.append('file', file);
       await fetch(`${API}/api/sounds/upload`, { method: 'POST', body: form });
       fetchSounds();
+    fetchAudioTuning();
+    fetchSpeakerTuning();
+    fetchSpeakers();
     setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);
       document.getElementById('soundFile').value = '';
     });
@@ -403,6 +508,122 @@
       await svcAction(name, 'restart');
     }
 
+
+    // =====================================================================
+    // TUNING
+    // =====================================================================
+
+    let audioTuning = {};
+    let speakerTuning = {};
+
+    async function fetchAudioTuning() {
+      try {
+        const res = await fetch(API + '/api/tuning/audio');
+        audioTuning = await res.json();
+        // Populate fields
+        for (const [key, val] of Object.entries(audioTuning)) {
+          const el = document.getElementById('t_' + key);
+          if (el) {
+            el.value = val;
+            // Update range display
+            const vEl = document.getElementById('v_' + key);
+            if (vEl) {
+              if (key.includes('_s') && !key.includes('ms')) vEl.textContent = val + 's';
+              else vEl.textContent = val;
+            }
+          }
+        }
+      } catch(e) { console.error('Audio tuning fetch error:', e); }
+    }
+
+    async function fetchSpeakerTuning() {
+      try {
+        const res = await fetch(API + '/api/tuning/speaker');
+        speakerTuning = await res.json();
+        for (const [key, val] of Object.entries(speakerTuning)) {
+          const el = document.getElementById('t_' + key);
+          if (el) {
+            el.value = val;
+            const vEl = document.getElementById('v_' + key);
+            if (vEl) vEl.textContent = val;
+          }
+        }
+      } catch(e) { console.error('Speaker tuning fetch error:', e); }
+    }
+
+    async function fetchSpeakers() {
+      try {
+        const res = await fetch(API + '/api/speakers');
+        const data = await res.json();
+        const el = document.getElementById('speakersList');
+        if (!data.speakers || Object.keys(data.speakers).length === 0) {
+          el.innerHTML = '<span class="stat-label">Aucune voix enregistree</span>';
+          return;
+        }
+        el.innerHTML = Object.entries(data.speakers).map(function(entry) {
+          var name = entry[0];
+          return '<div class="speaker-card">' +
+            '<span class="speaker-name">' + name + '</span>' +
+            '<div class="speaker-actions">' +
+              '<button class="danger" onclick="deleteSpeaker(\'' + name + '\')">Supprimer</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch(e) { console.error('Speakers fetch error:', e); }
+    }
+
+    async function applyAudioTuning() {
+      var params = {};
+      var fields = [
+        'wakeword_threshold', 'wakeword_log_threshold', 'wakeword_drain_frames',
+        'post_wakeword_delay_s', 'vad_silence_timeout_s', 'vad_min_speech_ms',
+        'vad_speech_prob_threshold', 'record_max_wait_s', 'post_play_delay_s'
+      ];
+      for (var i = 0; i < fields.length; i++) {
+        var el = document.getElementById('t_' + fields[i]);
+        if (el) params[fields[i]] = parseFloat(el.value);
+      }
+      try {
+        const res = await fetch(API + '/api/tuning/audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        const data = await res.json();
+        if (data.updated) alert('Reglages audio appliques: ' + data.updated.join(', '));
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function applySpeakerTuning() {
+      var params = {};
+      var fields = ['identification_threshold', 'auto_switch_confidence'];
+      for (var i = 0; i < fields.length; i++) {
+        var el = document.getElementById('t_' + fields[i]);
+        if (el) params[fields[i]] = parseFloat(el.value);
+      }
+      try {
+        const res = await fetch(API + '/api/tuning/speaker', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        const data = await res.json();
+        alert('Reglages speaker appliques');
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function deleteSpeaker(name) {
+      if (!confirm('Supprimer la voix de ' + name + ' ?')) return;
+      try {
+        await fetch(API + '/api/speakers/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name }),
+        });
+        fetchSpeakers();
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
     function refreshAll() {
       fetchStatus();
       fetchLogs();
@@ -417,6 +638,9 @@
     fetchHealth();
     fetchRoutines();
     fetchSounds();
+    fetchAudioTuning();
+    fetchSpeakerTuning();
+    fetchSpeakers();
     setInterval(function() { fetchHealth(); fetchPersonas(); }, 10000);
     setInterval(refreshAll, 5000);
     setInterval(fetchServiceList, 10000);

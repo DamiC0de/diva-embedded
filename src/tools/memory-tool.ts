@@ -165,7 +165,8 @@ export async function identifySpeaker(audioB64: string): Promise<string> {
     console.log(`[Memory] Speaker identified: ${speaker} (confidence: ${confidence})`);
     
     // Auto-switch user if confident
-    if (speaker !== "unknown" && confidence > 0.6) {
+    // Auto-switch threshold is now managed by Python speaker-tuning.json
+    if (speaker !== "unknown" && confidence > 0) {
       setCurrentUser(speaker);
     }
     

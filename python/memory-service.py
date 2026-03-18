@@ -99,6 +99,31 @@ except Exception as e:
     extract_embedding_onnx = None
 
 
+
+# --- Speaker ID Tuning (configurable via API) ---
+import json as _json
+_SPEAKER_TUNING_PATH = "/opt/diva-embedded/data/speaker-tuning.json"
+_DEFAULT_SPEAKER_TUNING = {
+    "identification_threshold": 0.3,
+    "auto_switch_confidence": 0.6,
+    "min_audio_duration_s": 0.5,
+}
+
+def _load_speaker_tuning():
+    try:
+        with open(_SPEAKER_TUNING_PATH) as f:
+            saved = _json.load(f)
+            return {**_DEFAULT_SPEAKER_TUNING, **saved}
+    except Exception:
+        return dict(_DEFAULT_SPEAKER_TUNING)
+
+def _save_speaker_tuning(cfg):
+    with open(_SPEAKER_TUNING_PATH, "w") as f:
+        _json.dump(cfg, f, indent=2)
+
+speaker_tuning = _load_speaker_tuning()
+_save_speaker_tuning(speaker_tuning)
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Suppress default logging
@@ -249,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
                         best_name = name
                 
                 # Threshold
-                if best_score < 0.3:
+                if best_score < speaker_tuning["identification_threshold"]:
                     best_name = "unknown"
                 
                 self._respond(200, {"speaker": best_name, "confidence": round(best_score, 3)})
@@ -257,6 +282,61 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"[WeSpeaker] Error: {e}")
                 self._respond(200, {"speaker": "unknown", "confidence": 0})
         
+        elif self.path == '/speaker/tuning':
+            # Update speaker tuning
+            for key, value in body.items():
+                if key in speaker_tuning:
+                    speaker_tuning[key] = value
+            _save_speaker_tuning(speaker_tuning)
+            print(f"[WeSpeaker] Tuning updated: {speaker_tuning}")
+            self._respond(200, speaker_tuning)
+        
+        elif self.path == '/speaker/delete':
+            # Delete a registered speaker
+            name = body.get('name', '')
+            if name in registered_speakers:
+                del registered_speakers[name]
+                npy_path = os.path.join(SPEAKERS_DIR, f"{name}.npy")
+                if os.path.exists(npy_path):
+                    os.unlink(npy_path)
+                print(f"[WeSpeaker] Deleted speaker: {name}")
+                self._respond(200, {"deleted": name})
+            else:
+                self._respond(404, {"error": f"Speaker '{name}' not found"})
+        
+        elif self.path == '/speaker/test':
+            # Test identification with current audio (returns scores for ALL speakers)
+            if speaker_model is None:
+                self._respond(500, {"error": "WeSpeaker not initialized"})
+                return
+            audio_b64 = body.get('audio', '')
+            if not audio_b64:
+                self._respond(400, {"error": "No audio"})
+                return
+            try:
+                import numpy as np
+                audio_bytes = base64.b64decode(audio_b64)
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                    f.write(audio_bytes)
+                    tmp_path = f.name
+                embedding = extract_embedding_onnx(tmp_path)
+                os.unlink(tmp_path)
+                scores = {}
+                for name, ref_emb in registered_speakers.items():
+                    score = float(np.dot(embedding, ref_emb) / (np.linalg.norm(embedding) * np.linalg.norm(ref_emb)))
+                    scores[name] = round(score, 4)
+                best = max(scores, key=scores.get) if scores else "unknown"
+                best_score = scores.get(best, 0)
+                self._respond(200, {
+                    "scores": scores,
+                    "best_match": best,
+                    "best_score": best_score,
+                    "threshold": speaker_tuning["identification_threshold"],
+                    "identified": best if best_score >= speaker_tuning["identification_threshold"] else "unknown",
+                })
+            except Exception as e:
+                self._respond(500, {"error": str(e)})
+
         elif self.path == '/speaker/register':
             # Register a new speaker
             if speaker_model is None:
@@ -297,8 +377,16 @@ class Handler(BaseHTTPRequestHandler):
                 "status": "ok",
                 "mem0": memory is not None,
                 "wespeaker": speaker_model is not None,
-                "speakers": list(registered_speakers.keys())
+                "speakers": list(registered_speakers.keys()),
+                "speaker_tuning": speaker_tuning,
             })
+        elif self.path == '/speaker/tuning':
+            self._respond(200, speaker_tuning)
+        elif self.path == '/speaker/list':
+            speakers_info = {}
+            for name in registered_speakers:
+                speakers_info[name] = {"embedding_shape": list(registered_speakers[name].shape)}
+            self._respond(200, {"speakers": speakers_info, "count": len(registered_speakers)})
         else:
             self._respond(404, {"error": "Not found"})
 

@@ -391,6 +391,91 @@ async function handleRequest(req, res) {
             }
             return;
         }
+        // =====================================================================
+        // TUNING — Audio / Wake Word / VAD / Speaker ID
+        // =====================================================================
+        // Audio server tuning (wake word, VAD)
+        if (path === "/api/tuning/audio" && req.method === "GET") {
+            try {
+                const r = await fetch("http://localhost:9010/tuning", { signal: AbortSignal.timeout(3000) });
+                respond(res, 200, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Audio server unreachable" });
+            }
+            return;
+        }
+        if (path === "/api/tuning/audio" && req.method === "POST") {
+            try {
+                const body = await readBody(req);
+                const r = await fetch("http://localhost:9010/tuning", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body,
+                    signal: AbortSignal.timeout(3000),
+                });
+                respond(res, 200, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Audio server unreachable" });
+            }
+            return;
+        }
+        // Speaker ID tuning
+        if (path === "/api/tuning/speaker" && req.method === "GET") {
+            try {
+                const r = await fetch("http://localhost:9002/speaker/tuning", { signal: AbortSignal.timeout(3000) });
+                respond(res, 200, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Memory service unreachable" });
+            }
+            return;
+        }
+        if (path === "/api/tuning/speaker" && req.method === "POST") {
+            try {
+                const body = await readBody(req);
+                const r = await fetch("http://localhost:9002/speaker/tuning", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body,
+                    signal: AbortSignal.timeout(3000),
+                });
+                respond(res, 200, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Memory service unreachable" });
+            }
+            return;
+        }
+        // Registered speakers list with details
+        if (path === "/api/speakers" && req.method === "GET") {
+            try {
+                const r = await fetch("http://localhost:9002/speaker/list", { signal: AbortSignal.timeout(3000) });
+                respond(res, 200, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Memory service unreachable" });
+            }
+            return;
+        }
+        // Delete a registered speaker
+        if (path === "/api/speakers/delete" && req.method === "POST") {
+            try {
+                const body = await readBody(req);
+                const r = await fetch("http://localhost:9002/speaker/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body,
+                    signal: AbortSignal.timeout(3000),
+                });
+                respond(res, r.status, await r.json());
+            }
+            catch (err) {
+                respond(res, 500, { error: "Memory service unreachable" });
+            }
+            return;
+        }
         // 404
         respond(res, 404, { error: "Not found" });
     }
