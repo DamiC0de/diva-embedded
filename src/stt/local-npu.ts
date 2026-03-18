@@ -72,11 +72,13 @@ function isRepeatOfPrevious(text: string): boolean {
   if (!lastTranscription || !text) return false;
   const a = text.toLowerCase().trim();
   const b = lastTranscription.toLowerCase().trim();
+  // Never filter commands (short intentional phrases)
+  if (a.length < 25) return false;
   if (a === b) return true;
   const wordsA = new Set(a.split(/\s+/));
   const wordsB = new Set(b.split(/\s+/));
   const intersection = [...wordsA].filter(w => wordsB.has(w));
-  return intersection.length / Math.max(wordsA.size, wordsB.size) > 0.8;
+  return intersection.length / Math.max(wordsA.size, wordsB.size) > 0.85;
 }
 
 // --- Local NPU transcription ---
