@@ -13,7 +13,7 @@ import { generateBriefing } from "../tools/morning-briefing.js";
 import { findRoutine, executeRoutine, listRoutines } from "../tools/routines.js";
 import { handleHomeCommand } from "../smarthome/ha-connector.js";
 import { getCurrentPersona } from "../persona/engine.js";
-import { searchMemory, getCurrentUser } from "../tools/memory-tool.js";
+import { getAllMemories, getCurrentUser } from "../tools/memory-tool.js";
 const INTENT_URL = process.env.INTENT_URL ?? "http://localhost:8882";
 // Restore timers on module load
 restoreTimers().catch((err) => console.error("[Router] Timer restore failed:", err));
@@ -327,7 +327,7 @@ export async function handleLocalIntent(category, text) {
         case "about_me": {
             const persona = getCurrentPersona();
             const userId = getCurrentUser();
-            const memories = await searchMemory(text);
+            const memories = await getAllMemories();
             const parts = [];
             if (persona.greetingName && persona.id !== "guest") {
                 parts.push("Tu t'appelles " + persona.greetingName + ".");

@@ -175,6 +175,7 @@ async function conversationLoop() {
         if (speaker && speaker !== "unknown") {
             console.log(`[SPEAKER] Identifié: ${speaker}`);
             setCurrentPersona(speaker);
+            claude.clearHistory(); // New speaker = fresh conversation context
         }
         if (!transcription || transcription.trim().length === 0) {
             console.log("[STT] Transcription vide");
@@ -244,6 +245,9 @@ async function handleTranscription(transcription, speaker = "unknown") {
     if (filler.primary) {
         playAudioFile(filler.primary).catch(() => { });
     }
+    // Reload memory for current speaker before asking Claude
+    const freshMemory = await getMemorySummary();
+    claude.setMemorySummary(freshMemory);
     // Claude streaming + TTS pipeline
     console.log("[CLAUDE] Asking (streaming)...");
     let resolveNext = null;

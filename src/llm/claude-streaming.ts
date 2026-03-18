@@ -30,6 +30,10 @@ export class ClaudeStreamingClient {
     this.memorySummary = summary;
   }
 
+  clearHistory(): void {
+    this.conversationHistory = [];
+  }
+
   /**
    * Stream a response, calling onSentence for each completed sentence.
    * Returns the full response text.

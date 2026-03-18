@@ -14,6 +14,7 @@ export declare class ClaudeStreamingClient {
     constructor();
     registerTool(name: ToolName, handler: ToolHandler): void;
     setMemorySummary(summary: string): void;
+    clearHistory(): void;
     /**
      * Stream a response, calling onSentence for each completed sentence.
      * Returns the full response text.
