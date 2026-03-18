@@ -128,11 +128,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Suppress default logging
     
+    def handle_error(self, request=None, client_address=None):
+        pass  # Suppress BrokenPipe tracebacks in stderr
+    
     def _respond(self, code, data):
-        self.send_response(code)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        try:
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        except BrokenPipeError:
+            pass  # Client disconnected, ignore
     
     def do_POST(self):
         length = int(self.headers.get('Content-Length', 0))
@@ -267,11 +273,17 @@ class Handler(BaseHTTPRequestHandler):
                 # Compare with registered speakers
                 best_name = "unknown"
                 best_score = 0
+                all_scores = {}
                 for name, ref_emb in registered_speakers.items():
                     score = float(np.dot(embedding, ref_emb) / (np.linalg.norm(embedding) * np.linalg.norm(ref_emb)))
+                    all_scores[name] = round(score, 3)
                     if score > best_score:
                         best_score = score
                         best_name = name
+                
+                # Log all scores for debugging
+                scores_str = ", ".join(f"{n}={s}" for n, s in sorted(all_scores.items(), key=lambda x: -x[1]))
+                print(f"[WeSpeaker] Scores: {scores_str} | threshold={speaker_tuning['identification_threshold']}")
                 
                 # Threshold
                 if best_score < speaker_tuning["identification_threshold"]:
