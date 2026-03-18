@@ -127,9 +127,9 @@ export async function handleLocalIntent(category, text) {
         }
         case "identity": {
             const replies = [
-                "Je suis Diva, ton assistante vocale familiale !",
-                "Moi c'est Diva ! Je suis la pour t'aider au quotidien.",
-                "Je m'appelle Diva, assistante vocale de la famille.",
+                "Je suis Diva, ton compagnon IA !",
+                "Moi c.est Diva, ton compagnon IA.",
+                "Je m.appelle Diva. Je suis la pour toi !",
             ];
             return { handled: true, response: replies[Math.floor(Math.random() * replies.length)] };
         }
