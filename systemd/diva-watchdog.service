@@ -1,0 +1,15 @@
+[Unit]
+Description=Diva Watchdog — Service Health Monitor
+After=network.target
+Wants=diva-server.service
+
+[Service]
+Type=simple
+ExecStart=/opt/diva-watchdog/watchdog.sh
+Restart=always
+RestartSec=10
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

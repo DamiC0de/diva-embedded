@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment & secrets
+.env
+.env.encrypted
+.backup-key
+
+# Databases (contain personal data)
+*.db
+*.db-wal
+*.db-shm
+
+# Backups
+diva-backups/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# BMAD internal
+_bmad/
+
+# Logs
+*.log
+*.log.*
+
+# Audio assets (too large for git)
+diva-embedded/assets/local-music/
+diva-embedded/assets/cached-responses/
+
+# Models (too large for git)
+diva-embedded/models/
+
+# Training data
+diva-embedded/training/wakeword/data/
+diva-embedded/training/voice/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temp files
+.tmp_*

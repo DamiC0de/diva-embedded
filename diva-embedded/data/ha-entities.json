@@ -1,0 +1,31 @@
+[
+  {
+    "voiceName": "lumière du salon",
+    "entityId": "light.salon",
+    "domain": "light",
+    "area": "salon"
+  },
+  {
+    "voiceName": "lumière de la chambre",
+    "entityId": "light.chambre",
+    "domain": "light",
+    "area": "chambre"
+  },
+  {
+    "voiceName": "lumière de la cuisine",
+    "entityId": "light.cuisine",
+    "domain": "light",
+    "area": "cuisine"
+  },
+  {
+    "voiceName": "chauffage",
+    "entityId": "climate.thermostat",
+    "domain": "climate"
+  },
+  {
+    "voiceName": "télé",
+    "entityId": "media_player.tv",
+    "domain": "media_player",
+    "area": "salon"
+  }
+]

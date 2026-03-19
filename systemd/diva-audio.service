@@ -1,0 +1,19 @@
+[Unit]
+Description=Diva Audio Server (FastAPI)
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/diva-embedded
+ExecStart=/opt/npu-env/bin/python /opt/diva-embedded/python/diva_audio_server.py
+ExecStopPost=/bin/bash -c 'pkill -9 arecord 2>/dev/null || true'
+Restart=always
+RestartSec=3
+Environment=ALSA_CARD=5
+MemoryMax=800M
+TimeoutStopSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

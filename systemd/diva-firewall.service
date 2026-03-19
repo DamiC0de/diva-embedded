@@ -1,0 +1,12 @@
+[Unit]
+Description=Diva Firewall Rules
+After=network.target
+Before=diva-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/diva-watchdog/firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

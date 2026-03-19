@@ -1,0 +1,17 @@
+[Unit]
+Description=Diva PROTO — Python wake word + audio
+After=diva-node.service
+Requires=diva-node.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/diva-embedded
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/bin/python3 python/wakeword_server.py
+Restart=always
+RestartSec=5
+Environment=AUDIO_INPUT_DEVICE=plughw:5
+EnvironmentFile=/opt/diva-embedded/.env
+
+[Install]
+WantedBy=multi-user.target

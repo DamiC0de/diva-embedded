@@ -1,0 +1,16 @@
+[Unit]
+Description=Diva Voice Assistant Server
+After=network.target piper-tts.service
+Wants=piper-tts.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node dist/index.js
+WorkingDirectory=/opt/diva-embedded
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/diva-embedded/.env
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

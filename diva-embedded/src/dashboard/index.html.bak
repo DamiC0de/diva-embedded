@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diva — Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+      --text: #e4e4e7; --muted: #71717a; --accent: #818cf8;
+      --green: #4ade80; --red: #f87171; --orange: #fb923c; --blue: #60a5fa;
+    }
+    body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
+    h1 { font-size: 1.5rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    h1 span { color: var(--accent); }
+    h2 { font-size: 1rem; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .stat:last-child { border-bottom: none; }
+    .stat-label { color: var(--muted); font-size: 0.85rem; }
+    .stat-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-ok { background: rgba(74,222,128,0.15); color: var(--green); }
+    .badge-down { background: rgba(248,113,113,0.15); color: var(--red); }
+    .badge-warn { background: rgba(251,146,60,0.15); color: var(--orange); }
+    .services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    .service-item { padding: 8px; border-radius: 6px; border: 1px solid var(--border); text-align: center; }
+    .service-name { font-size: 0.75rem; color: var(--muted); }
+    .service-status { font-size: 0.85rem; font-weight: 600; margin-top: 2px; }
+    .service-latency { font-size: 0.7rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; color: var(--muted); padding: 8px; border-bottom: 2px solid var(--border); font-weight: 500; }
+    td { padding: 8px; border-bottom: 1px solid var(--border); }
+    .log-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .log-intent { font-family: monospace; font-size: 0.75rem; }
+    .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    button { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: var(--border); }
+    button.danger { background: var(--red); }
+    .sound-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .sound-row:last-child { border-bottom: none; }
+    .sound-label { flex: 1; }
+    .sound-desc { font-size: 0.75rem; color: var(--muted); }
+    .sound-file { font-family: monospace; font-size: 0.8rem; color: var(--blue); }
+    input[type="file"] { font-size: 0.8rem; }
+    .upload-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .temp-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+    .temp-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+    .dnd-toggle { display: flex; align-items: center; gap: 12px; }
+    .toggle { width: 44px; height: 24px; background: var(--border); border-radius: 12px; position: relative; cursor: pointer; transition: background 0.3s; }
+    .toggle.active { background: var(--accent); }
+    .toggle::after { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.3s; }
+    .toggle.active::after { transform: translateX(20px); }
+
+    .svc-controls { display: flex; gap: 6px; margin-top: 8px; }
+    .svc-controls button { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; }
+    .svc-btn-start { background: var(--green); }
+    .svc-btn-stop { background: var(--red); }
+    .svc-btn-restart { background: var(--orange); }
+    .global-controls { display: flex; gap: 8px; margin: 12px 0; }
+    .svc-detail { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .svc-detail:last-child { border-bottom: none; }
+    .svc-info { display: flex; flex-direction: column; gap: 2px; }
+    .svc-meta { font-size: 0.7rem; color: var(--muted); }
+
+    .tuning-section { margin-bottom: 24px; }
+    .tuning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .tuning-param { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .tuning-param:last-child { border-bottom: none; }
+    .tuning-label { flex: 1; }
+    .tuning-desc { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+    .tuning-input { width: 90px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; text-align: right; }
+    .tuning-input:focus { border-color: var(--accent); outline: none; }
+    .tuning-range { width: 120px; accent-color: var(--accent); }
+    .tuning-value { font-family: monospace; font-size: 0.85rem; color: var(--accent); min-width: 50px; text-align: right; }
+    .speaker-card { display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; }
+    .speaker-name { font-weight: 600; }
+    .speaker-actions button { margin-left: 6px; padding: 3px 8px; font-size: 0.7rem; }
+    .apply-btn { background: var(--accent); margin-top: 12px; }
+    .section-subtitle { font-size: 0.85rem; color: var(--accent); margin: 12px 0 6px; font-weight: 600; }
+
+    .monitoring-card { max-height: 600px; display: flex; flex-direction: column; }
+    .log-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+    .log-controls label { font-size: 0.75rem; color: var(--muted); }
+    .log-controls select, .log-controls input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; }
+    .log-container { flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.75rem; line-height: 1.6; background: #0a0c10; border-radius: 6px; padding: 8px; min-height: 300px; max-height: 500px; }
+    .log-line { white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid rgba(255,255,255,0.03); padding: 1px 0; }
+    .log-ts { color: #555; }
+    .log-unit { font-weight: 600; min-width: 100px; display: inline-block; }
+    .log-unit-diva-server { color: var(--accent); }
+    .log-unit-diva-audio { color: var(--green); }
+    .log-unit-diva-memory { color: var(--orange); }
+    .log-unit-intent-router { color: var(--blue); }
+    .log-msg { color: #ccc; }
+    .log-msg-error { color: var(--red); }
+    .log-msg-warn { color: var(--orange); }
+    .log-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.65rem; margin-left: 4px; }
+    .log-badge-live { background: rgba(74,222,128,0.2); color: var(--green); animation: pulse 2s infinite; }
+    .log-badge-paused { background: rgba(248,113,113,0.2); color: var(--red); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .filter-chip { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+    .filter-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .log-search { width: 200px; }
+
+    .memory-section { margin-bottom: 16px; }
+    .memory-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .memory-controls select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
+    .memory-list { max-height: 400px; overflow-y: auto; }
+    .memory-item { padding: 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .memory-text { flex: 1; font-size: 0.85rem; line-height: 1.4; }
+    .memory-id { font-size: 0.65rem; color: var(--muted); font-family: monospace; margin-top: 4px; }
+    .memory-empty { color: var(--muted); font-style: italic; padding: 20px; text-align: center; }
+    .memory-add-form { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .memory-add-form input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; }
+    .memory-count { font-size: 0.75rem; color: var(--muted); }
+
+    .sound-play { background: var(--accent); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sound-play:hover { opacity: 0.8; }
+    .sound-play:active { transform: scale(0.95); }
+    .refresh-info { font-size: 0.7rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1><span>Diva</span> Dashboard</h1>
+  <p class="refresh-info" id="lastUpdate">Auto-refresh every 5s</p>
+
+  <div class="grid">
+    <!-- Services Status & Control -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Services</h2>
+      <div class="global-controls">
+        <button class="svc-btn-start" onclick="startAll()">Demarrer tout</button>
+        <button class="svc-btn-stop" onclick="stopAll()">Arreter tout</button>
+        <button class="svc-btn-restart" onclick="restartService('diva-server')">Redemarrer Diva</button>
+      </div>
+      <div id="servicesList"></div>
+    </div>
+
+    <!-- System Metrics -->
+    <div class="card">
+      <h2>System</h2>
+      <div id="metrics">
+        <div class="stat"><span class="stat-label">CPU Temp</span><span class="stat-value" id="cpuTemp">--</span></div>
+        <div class="stat"><span class="stat-label">Load (1/5/15)</span><span class="stat-value" id="cpuLoad">--</span></div>
+        <div class="stat"><span class="stat-label">RAM</span><span class="stat-value" id="ramUsage">--</span></div>
+        <div class="stat"><span class="stat-label">Disk</span><span class="stat-value" id="diskUsage">--</span></div>
+        <div class="stat"><span class="stat-label">NPU</span><span class="stat-value" id="npuStatus">--</span></div>
+        <div class="stat"><span class="stat-label">Uptime</span><span class="stat-value" id="uptime">--</span></div>
+      </div>
+    </div>
+
+    <!-- Active Timers -->
+    <div class="card">
+      <h2>Timers</h2>
+      <div id="timers"><span class="stat-label">No active timers</span></div>
+    </div>
+
+    <!-- DND Mode -->
+    <div class="card">
+      <h2>Mode Ne Pas Deranger</h2>
+      <div class="dnd-toggle">
+        <div class="toggle" id="dndToggle" onclick="toggleDND()"></div>
+        <span id="dndLabel">Inactif</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sounds Management -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Sons Systeme</h2>
+    <div id="sounds"></div>
+    <div class="upload-form">
+      <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="soundFile" accept=".wav" />
+        <button type="submit">Upload WAV</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Personas -->  <div class="card" style="margin-bottom: 16px;">    <h2>Personas</h2>    <div id="personas"><span class="stat-label">Loading...</span></div>  </div>  <!-- Health / Elderly -->  <div class="grid">    <div class="card">      <h2>Medicaments</h2>      <div id="medCompliance"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Questions Repetees</h2>      <div id="repetitions"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Radio</h2>      <div id="radioStatus"><span class="stat-label">Loading...</span></div>    </div>    <div class="card">      <h2>Liste de Courses</h2>      <div id="shoppingList"><span class="stat-label">Loading...</span></div>    </div>  </div>  <!-- Routines -->  <div class="card" style="margin-bottom: 16px;">    <h2>Routines</h2>    <div id="routines"><span class="stat-label">Loading...</span></div>  </div>
+
+
+  <!-- Memory Manager -->
+  <div class="card memory-section">
+    <h2>Memoires (Mem0)</h2>
+    <div class="memory-controls">
+      <label>Utilisateur:</label>
+      <select id="memoryUserSelect" onchange="loadMemories()">
+        <option value="default">default</option>
+      </select>
+      <button onclick="loadMemories()">Rafraichir</button>
+      <span class="memory-count" id="memoryCount"></span>
+    </div>
+    <div class="memory-list" id="memoryList">
+      <div class="memory-empty">Selectionne un utilisateur</div>
+    </div>
+    <div class="memory-add-form">
+      <input type="text" id="memoryAddInput" placeholder="Ajouter une memoire manuellement (test)...">
+      <button onclick="addMemoryManual()">Ajouter</button>
+    </div>
+  </div>
+
+
+  <!-- Network Section -->
+  <div class="grid" style="margin-bottom: 16px;">
+    <!-- WiFi Card -->
+    <div class="card">
+      <h2>WiFi</h2>
+      <div id="wifiStatus" style="margin-bottom: 12px;">
+        <span class="stat-label">Chargement...</span>
+      </div>
+      <div id="wifiNetworks" style="margin-bottom: 12px;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="scanWifi()" style="font-size:0.8rem;">Actualiser</button>
+        <button onclick="disconnectWifi()" class="danger" style="font-size:0.8rem;" id="wifiDisconnectBtn" disabled>Deconnecter</button>
+      </div>
+      <div id="wifiConnectForm" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="font-size:0.85rem;margin-bottom:8px;">Connexion a <strong id="wifiConnectSSID"></strong></div>
+        <input type="password" id="wifiPassword" placeholder="Mot de passe WiFi" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;margin-bottom:8px;">
+        <div style="display:flex;gap:8px;">
+          <button onclick="connectWifi()" style="font-size:0.8rem;">Connecter</button>
+          <button onclick="cancelWifiConnect()" style="font-size:0.8rem;background:transparent;border:1px solid var(--border);color:var(--muted);">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bluetooth Card -->
+    <div class="card">
+      <h2>Bluetooth</h2>
+      <div id="btStatus" style="margin-bottom: 12px;">
+        <span class="stat-label">Chargement...</span>
+      </div>
+      <div id="btPairedDevices" style="margin-bottom: 12px;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button onclick="scanBluetooth()" style="font-size:0.8rem;" id="btScanBtn">Rechercher des appareils</button>
+      </div>
+      <div id="btScanResults"></div>
+    </div>
+  </div>
+
+
+  <!-- Tuning Section -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Reglages Audio / Wake Word / VAD</h2>
+    <p class="stat-label" style="margin-bottom: 12px;">Parametres appliques a chaud (pas besoin de redemarrer)</p>
+    
+    <div class="tuning-grid">
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Wake Word</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil de detection<div class="tuning-desc">Plus bas = plus sensible mais plus de faux positifs (0.3-0.9)</div></div>
+          <input type="range" class="tuning-range" id="t_wakeword_threshold" min="0.3" max="0.95" step="0.05" oninput="document.getElementById('v_wakeword_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_wakeword_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil log score<div class="tuning-desc">Affiche le score dans les logs au dessus de cette valeur</div></div>
+          <input type="range" class="tuning-range" id="t_wakeword_log_threshold" min="0.1" max="0.9" step="0.05" oninput="document.getElementById('v_wakeword_log_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_wakeword_log_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Frames drain post-playback<div class="tuning-desc">Nombre de frames ignorees apres un playback (anti-echo). 20 = ~1.6s</div></div>
+          <input type="number" class="tuning-input" id="t_wakeword_drain_frames" min="5" max="50" step="5">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Delai post-wakeword (s)<div class="tuning-desc">Pause apres detection WW avant ecoute (vider buffer)</div></div>
+          <input type="number" class="tuning-input" id="t_post_wakeword_delay_s" min="0.1" max="2" step="0.1">
+        </div>
+      </div>
+
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">VAD (Voice Activity Detection)</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil silence fin de parole (s)<div class="tuning-desc">Duree de silence avant de considerer que l'utilisateur a fini. Plus bas = plus rapide</div></div>
+          <input type="range" class="tuning-range" id="t_vad_silence_timeout_s" min="0.3" max="2.0" step="0.1" oninput="document.getElementById('v_vad_silence_timeout_s').textContent=this.value+'s'">
+          <span class="tuning-value" id="v_vad_silence_timeout_s">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Duree min parole (ms)<div class="tuning-desc">Audio ignore si plus court que ca (anti-bruit)</div></div>
+          <input type="number" class="tuning-input" id="t_vad_min_speech_ms" min="100" max="1000" step="50">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil probabilite parole<div class="tuning-desc">Silero VAD: probabilite au dessus de laquelle on considere que c'est de la parole (0.3-0.8)</div></div>
+          <input type="range" class="tuning-range" id="t_vad_speech_prob_threshold" min="0.2" max="0.8" step="0.05" oninput="document.getElementById('v_vad_speech_prob_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_vad_speech_prob_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Attente max sans parole (s)<div class="tuning-desc">Timeout si aucune parole detectee apres WW</div></div>
+          <input type="number" class="tuning-input" id="t_record_max_wait_s" min="2" max="15" step="1">
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Delai post-play (s)<div class="tuning-desc">Pause apres lecture audio avant de reactiverle micro (anti-echo)</div></div>
+          <input type="range" class="tuning-range" id="t_post_play_delay_s" min="0.1" max="1.0" step="0.05" oninput="document.getElementById('v_post_play_delay_s').textContent=this.value+'s'">
+          <span class="tuning-value" id="v_post_play_delay_s">-</span>
+        </div>
+      </div>
+    </div>
+    <button class="apply-btn" onclick="applyAudioTuning()">Appliquer les reglages audio</button>
+  </div>
+
+  <!-- Speaker ID Tuning -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Identification Vocale (WeSpeaker)</h2>
+    
+    <div class="tuning-grid">
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Parametres</div>
+        <div class="tuning-param">
+          <div class="tuning-label">Seuil d'identification<div class="tuning-desc">Cosine similarity minimum pour reconnaitre un locuteur (0.1-0.8). Plus bas = plus permissif</div></div>
+          <input type="range" class="tuning-range" id="t_identification_threshold" min="0.1" max="0.8" step="0.05" oninput="document.getElementById('v_identification_threshold').textContent=this.value">
+          <span class="tuning-value" id="v_identification_threshold">-</span>
+        </div>
+        <div class="tuning-param">
+          <div class="tuning-label">Confiance auto-switch<div class="tuning-desc">Confiance minimum pour changer automatiquement de persona</div></div>
+          <input type="range" class="tuning-range" id="t_auto_switch_confidence" min="0.1" max="0.9" step="0.05" oninput="document.getElementById('v_auto_switch_confidence').textContent=this.value">
+          <span class="tuning-value" id="v_auto_switch_confidence">-</span>
+        </div>
+        <button class="apply-btn" onclick="applySpeakerTuning()">Appliquer</button>
+      </div>
+
+      <div class="card" style="border: 1px solid var(--border);">
+        <div class="section-subtitle">Voix enregistrees</div>
+        <div id="speakersList"><span class="stat-label">Chargement...</span></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Live Monitoring -->
+  <div class="card monitoring-card" style="margin-bottom: 16px;">
+    <h2>Monitoring Live <span class="log-badge log-badge-live" id="streamBadge">LIVE</span></h2>
+    <div class="log-controls">
+      <div>
+        <button class="filter-chip active" data-unit="all" onclick="toggleLogFilter(this)">Tous</button>
+        <button class="filter-chip active" data-unit="diva-server" onclick="toggleLogFilter(this)">diva-server</button>
+        <button class="filter-chip active" data-unit="diva-audio" onclick="toggleLogFilter(this)">diva-audio</button>
+        <button class="filter-chip active" data-unit="diva-memory" onclick="toggleLogFilter(this)">diva-memory</button>
+        <button class="filter-chip active" data-unit="intent-router" onclick="toggleLogFilter(this)">intent-router</button>
+      </div>
+      <input type="text" class="log-search" id="logSearch" placeholder="Filtrer les logs..." oninput="filterLogs()">
+      <button class="secondary" id="pauseBtn" onclick="togglePause()">Pause</button>
+      <button class="secondary" onclick="clearLogs()">Clear</button>
+      <label><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
+    </div>
+    <div class="log-container" id="logContainer"></div>
+  </div>
+
+  <!-- Interaction Logs -->
+  <div class="card">
+    <h2>Interactions Recentes</h2>
+    <table>
+      <thead>
+        <tr><th>Heure</th><th>Locuteur</th><th>Transcription</th><th>Intent</th><th>Reponse</th><th>Latence</th></tr>
+      </thead>
+      <tbody id="logsBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API = '';
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(`${API}/api/status`);
+        const data = await res.json();
+        // renderServices removed — servicesList handled by fetchServiceList
+        renderMetrics(data.metrics);
+      } catch (e) { console.error('Status fetch error:', e); }
+    }
+
+    async function fetchLogs() {
+      try {
+        const res = await fetch(`${API}/api/logs?limit=50`);
+        const data = await res.json();
+        renderLogs(data.logs);
+      } catch (e) { console.error('Logs fetch error:', e); }
+    }
+
+    async function fetchTimers() {
+      try {
+        const res = await fetch(`${API}/api/timers`);
+        const data = await res.json();
+        renderTimers(data.timers);
+      } catch (e) { console.error('Timers fetch error:', e); }
+    }
+
+    async function fetchSounds() {
+      try {
+        const res = await fetch(`${API}/api/sounds`);
+        const data = await res.json();
+        renderSounds(data.sounds);
+      } catch (e) { console.error('Sounds fetch error:', e); }
+    }
+
+    async function fetchDND() {
+      try {
+        const res = await fetch(`${API}/api/dnd`);
+        const data = await res.json();
+        renderDND(data);
+      } catch (e) { console.error('DND fetch error:', e); }
+    }
+
+    function renderServices(services) {
+      const el = document.getElementById('services');
+      el.innerHTML = Object.entries(services).map(([name, info]) => {
+        const cls = info.status === 'ok' ? 'badge-ok' : 'badge-down';
+        return `<div class="service-item">
+          <div class="service-name">${name}</div>
+          <div class="service-status"><span class="badge ${cls}">${info.status}</span></div>
+          <div class="service-latency">${info.latencyMs}ms</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderMetrics(m) {
+      if (m.error) return;
+      const tempColor = m.cpu.tempC > 70 ? 'var(--red)' : m.cpu.tempC > 55 ? 'var(--orange)' : 'var(--green)';
+      document.getElementById('cpuTemp').innerHTML = `<span style="color:${tempColor}">${m.cpu.tempC}°C</span>`;
+      document.getElementById('cpuLoad').textContent = `${m.cpu.load1m} / ${m.cpu.load5m} / ${m.cpu.load15m}`;
+      document.getElementById('ramUsage').textContent = `${m.memory.usedMB}/${m.memory.totalMB} MB (${m.memory.usedPercent}%)`;
+      document.getElementById('diskUsage').textContent = `${m.disk.used}/${m.disk.total} (${m.disk.usedPercent})`;
+      document.getElementById('npuStatus').innerHTML = m.npu.active
+        ? '<span class="badge badge-ok">Active</span>'
+        : '<span class="badge badge-warn">Idle</span>';
+      document.getElementById('uptime').textContent = m.uptime;
+    }
+
+    function renderTimers(timers) {
+      const el = document.getElementById('timers');
+      if (!timers || timers.length === 0) {
+        el.innerHTML = '<span class="stat-label">Aucun minuteur en cours</span>';
+        return;
+      }
+      el.innerHTML = timers.map(t => {
+        const min = Math.floor(t.remainingS / 60);
+        const sec = t.remainingS % 60;
+        return `<div class="stat">
+          <span class="stat-label">${t.label}${t.message ? ` — ${t.message}` : ''}</span>
+          <span class="stat-value">${min}m ${sec}s</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderSounds(sounds) {
+      const el = document.getElementById('sounds');
+      el.innerHTML = Object.entries(sounds).map(function(entry) {
+        var slot = entry[0], info = entry[1];
+        return '<div class="sound-row">' +
+          '<button class="sound-play" onclick="playSound(\'' + info.currentFile + '\')" title="Ecouter">&#9654;</button>' +
+          '<div class="sound-label">' +
+            '<div>' + info.description + '</div>' +
+            '<div class="sound-desc">' + slot + '</div>' +
+          '</div>' +
+          '<div class="sound-file">' + info.currentFile + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    var currentAudio = null;
+    function playSound(filename) {
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      currentAudio = new Audio(API + '/api/sounds/play/' + encodeURIComponent(filename));
+      currentAudio.play().catch(function(e) { alert('Erreur lecture: ' + e.message); });
+    }
+
+    function renderDND(data) {
+      const toggle = document.getElementById('dndToggle');
+      const label = document.getElementById('dndLabel');
+      if (data.active) {
+        toggle.classList.add('active');
+        label.textContent = `Actif (${data.remainingMin} min restantes)`;
+      } else {
+        toggle.classList.remove('active');
+        label.textContent = 'Inactif';
+      }
+    }
+
+    async function toggleDND() {
+      const toggle = document.getElementById('dndToggle');
+      const isActive = toggle.classList.contains('active');
+      await fetch(`${API}/api/dnd`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: !isActive, durationMin: 480 }),
+      });
+      fetchDND();
+    }
+
+    function renderLogs(logs) {
+      const tbody = document.getElementById('logsBody');
+      tbody.innerHTML = logs.reverse().map(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString('fr-FR');
+        const truncResp = (log.response || '').substring(0, 80) + ((log.response || '').length > 80 ? '...' : '');
+        return `<tr>
+          <td class="log-time">${time}</td>
+          <td>${log.speaker || '-'}</td>
+          <td>${log.transcription || '-'}</td>
+          <td class="log-intent"><span class="badge ${log.intent === 'local' ? 'badge-ok' : 'badge-warn'}">${log.category}</span></td>
+          <td>${truncResp}</td>
+          <td class="log-time">${log.latencyMs || '-'}ms</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Upload handler
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = document.getElementById('soundFile').files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      await fetch(`${API}/api/sounds/upload`, { method: 'POST', body: form });
+      fetchSounds();
+      document.getElementById('soundFile').value = '';
+    });
+
+    // Initial fetch + auto-refresh
+    async function fetchPersonas() {
+      try {
+        const res = await fetch(API + "/api/personas");
+        const data = await res.json();
+        const el = document.getElementById("personas");
+        if (!data.personas || data.personas.length === 0) {
+          el.innerHTML = "<span class=\"stat-label\">Aucune persona configuree</span>";
+          return;
+        }
+        el.innerHTML = data.personas.map(p => 
+          `<div class="stat"><span class="stat-label">${p.name} (${p.type})</span><span class="stat-value">${p.greetingName || p.id}</span></div>`
+        ).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchHealth() {
+      try {
+        const [medRes, repRes, radioRes, shopRes] = await Promise.all([
+          fetch(API + "/api/health/medications"),
+          fetch(API + "/api/health/repetitions"),
+          fetch(API + "/api/radio"),
+          fetch(API + "/api/shopping"),
+        ]);
+        const med = await medRes.json();
+        const rep = await repRes.json();
+        const radio = await radioRes.json();
+        const shop = await shopRes.json();
+
+        document.getElementById("medCompliance").innerHTML = 
+          `<div class="stat"><span class="stat-label">Compliance 7j</span><span class="stat-value">${med.compliance}%</span></div>
+           <div class="stat"><span class="stat-label">Prises cette semaine</span><span class="stat-value">${med.log?.length || 0}</span></div>`;
+
+        document.getElementById("repetitions").innerHTML = 
+          `<div class="stat"><span class="stat-label">Repetitions 7j</span><span class="stat-value">${rep.totalRepetitions || 0}</span></div>
+           <div class="stat"><span class="stat-label">Questions uniques</span><span class="stat-value">${rep.uniqueQuestions || 0}</span></div>`;
+
+        document.getElementById("radioStatus").innerHTML = radio.playing
+          ? `<div class="stat"><span class="stat-label">En cours</span><span class="stat-value badge badge-ok">${radio.station}</span></div>`
+          : "<span class=\"stat-label\">Aucune radio en cours</span>";
+
+        const items = shop.items || [];
+        document.getElementById("shoppingList").innerHTML = items.length === 0
+          ? "<span class=\"stat-label\">Liste vide</span>"
+          : items.map(i => `<div class="stat"><span class="stat-label">${i.name}</span><span class="stat-value" style="color:var(--muted);font-size:0.75rem">${i.addedBy}</span></div>`).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchRoutines() {
+      try {
+        const res = await fetch(API + "/api/routines");
+        const data = await res.json();
+        const el = document.getElementById("routines");
+        if (!data.routines || data.routines.length === 0) {
+          el.innerHTML = "<span class=\"stat-label\">Aucune routine configuree</span>";
+          return;
+        }
+        el.innerHTML = data.routines.map(r =>
+          `<div class="stat"><span class="stat-label">${r.name} — ${r.description}</span><span class="stat-value">${r.actions.length} actions</span></div>`
+        ).join("");
+      } catch(e) { console.error(e); }
+    }
+
+    async function fetchServiceList() {
+      try {
+        const res = await fetch(API + '/api/services/list');
+        const data = await res.json();
+        renderServiceList(data.services);
+      } catch(e) { console.error('Services list error:', e); }
+    }
+
+    function renderServiceList(services) {
+      const el = document.getElementById('servicesList');
+      el.innerHTML = Object.entries(services).map(([name, info]) => {
+        const statusCls = info.active === 'active' ? 'badge-ok' : 'badge-down';
+        const memMB = info.memory !== '-' && info.memory !== '[not set]' ? (parseInt(info.memory) / 1048576).toFixed(1) + ' MB' : '-';
+        return '<div class="svc-detail">' +
+          '<div class="svc-info">' +
+            '<div><strong>' + name + '</strong> <span class="badge ' + statusCls + '">' + info.active + '</span></div>' +
+            '<div class="svc-meta">PID: ' + info.pid + ' | RAM: ' + memMB + ' | Uptime: ' + info.uptime + '</div>' +
+          '</div>' +
+          '<div class="svc-controls">' +
+            '<button class="svc-btn-start" onclick="svcAction(\'' + name + '\', \'start\')">Start</button>' +
+            '<button class="svc-btn-stop" onclick="svcAction(\'' + name + '\', \'stop\')">Stop</button>' +
+            '<button class="svc-btn-restart" onclick="svcAction(\'' + name + '\', \'restart\')">Restart</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function svcAction(service, action) {
+      try {
+        await fetch(API + '/api/services/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ service, action }),
+        });
+        setTimeout(fetchServiceList, 1500);
+      } catch(e) { console.error('Service action error:', e); }
+    }
+
+    async function stopAll() {
+      if (!confirm('Arreter tous les services Diva ?')) return;
+      await fetch(API + '/api/services/kill-all', { method: 'POST' });
+      setTimeout(fetchServiceList, 2000);
+    }
+
+    async function startAll() {
+      await fetch(API + '/api/services/start-all', { method: 'POST' });
+      setTimeout(fetchServiceList, 3000);
+    }
+
+    async function restartService(name) {
+      await svcAction(name, 'restart');
+    }
+
+
+    // =====================================================================
+    // TUNING
+    // =====================================================================
+
+    let audioTuning = {};
+    let speakerTuning = {};
+
+    async function fetchAudioTuning() {
+      try {
+        const res = await fetch(API + '/api/tuning/audio');
+        audioTuning = await res.json();
+        // Populate fields
+        for (const [key, val] of Object.entries(audioTuning)) {
+          const el = document.getElementById('t_' + key);
+          if (el) {
+            el.value = val;
+            // Update range display
+            const vEl = document.getElementById('v_' + key);
+            if (vEl) {
+              if (key.includes('_s') && !key.includes('ms')) vEl.textContent = val + 's';
+              else vEl.textContent = val;
+            }
+          }
+        }
+      } catch(e) { console.error('Audio tuning fetch error:', e); }
+    }
+
+    async function fetchSpeakerTuning() {
+      try {
+        const res = await fetch(API + '/api/tuning/speaker');
+        speakerTuning = await res.json();
+        for (const [key, val] of Object.entries(speakerTuning)) {
+          const el = document.getElementById('t_' + key);
+          if (el) {
+            el.value = val;
+            const vEl = document.getElementById('v_' + key);
+            if (vEl) vEl.textContent = val;
+          }
+        }
+      } catch(e) { console.error('Speaker tuning fetch error:', e); }
+    }
+
+    async function fetchSpeakers() {
+      try {
+        const res = await fetch(API + '/api/speakers');
+        const data = await res.json();
+        const el = document.getElementById('speakersList');
+        if (!data.speakers || Object.keys(data.speakers).length === 0) {
+          el.innerHTML = '<span class="stat-label">Aucune voix enregistree</span>';
+          return;
+        }
+        el.innerHTML = Object.entries(data.speakers).map(function(entry) {
+          var name = entry[0];
+          return '<div class="speaker-card">' +
+            '<span class="speaker-name">' + name + '</span>' +
+            '<div class="speaker-actions">' +
+              '<button class="danger" onclick="deleteSpeaker(\'' + name + '\')">Supprimer</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch(e) { console.error('Speakers fetch error:', e); }
+    }
+
+    async function applyAudioTuning() {
+      var params = {};
+      var fields = [
+        'wakeword_threshold', 'wakeword_log_threshold', 'wakeword_drain_frames',
+        'post_wakeword_delay_s', 'vad_silence_timeout_s', 'vad_min_speech_ms',
+        'vad_speech_prob_threshold', 'record_max_wait_s', 'post_play_delay_s'
+      ];
+      for (var i = 0; i < fields.length; i++) {
+        var el = document.getElementById('t_' + fields[i]);
+        if (el) params[fields[i]] = parseFloat(el.value);
+      }
+      try {
+        const res = await fetch(API + '/api/tuning/audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        const data = await res.json();
+        if (data.updated) alert('Reglages audio appliques: ' + data.updated.join(', '));
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function applySpeakerTuning() {
+      var params = {};
+      var fields = ['identification_threshold', 'auto_switch_confidence'];
+      for (var i = 0; i < fields.length; i++) {
+        var el = document.getElementById('t_' + fields[i]);
+        if (el) params[fields[i]] = parseFloat(el.value);
+      }
+      try {
+        const res = await fetch(API + '/api/tuning/speaker', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        const data = await res.json();
+        alert('Reglages speaker appliques');
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function deleteSpeaker(name) {
+      if (!confirm('Supprimer la voix de ' + name + ' ?')) return;
+      try {
+        await fetch(API + '/api/speakers/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name }),
+        });
+        fetchSpeakers();
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+
+    // =====================================================================
+    // LIVE MONITORING
+    // =====================================================================
+
+    var logEntries = [];
+    var maxLogEntries = 500;
+    var logPaused = false;
+    var logEventSource = null;
+    var activeFilters = new Set(['all', 'diva-server', 'diva-audio', 'diva-memory', 'intent-router']);
+
+    function initLiveMonitoring() {
+      // Load recent history first
+      fetch(API + '/api/logs/journalctl?lines=80')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.entries) {
+            data.entries.forEach(function(e) { addLogEntry(e); });
+            scrollLogToBottom();
+          }
+          // Then connect SSE
+          connectSSE();
+        })
+        .catch(function(e) {
+          console.error('Log history load failed:', e);
+          connectSSE();
+        });
+    }
+
+    function connectSSE() {
+      if (logEventSource) logEventSource.close();
+      logEventSource = new EventSource(API + '/api/logs/stream?services=diva-server,diva-audio,diva-memory,intent-router');
+
+      logEventSource.onmessage = function(event) {
+        if (logPaused) return;
+        try {
+          var entry = JSON.parse(event.data);
+          if (entry.msg) addLogEntry(entry);
+        } catch(e) {}
+      };
+
+      logEventSource.onerror = function() {
+        document.getElementById('streamBadge').className = 'log-badge log-badge-paused';
+        document.getElementById('streamBadge').textContent = 'RECONNECTING';
+        setTimeout(connectSSE, 3000);
+      };
+
+      logEventSource.onopen = function() {
+        document.getElementById('streamBadge').className = 'log-badge log-badge-live';
+        document.getElementById('streamBadge').textContent = 'LIVE';
+      };
+    }
+
+    function addLogEntry(entry) {
+      logEntries.push(entry);
+      if (logEntries.length > maxLogEntries) {
+        logEntries.shift();
+      }
+      renderLogEntry(entry);
+    }
+
+    function renderLogEntry(entry) {
+      var container = document.getElementById('logContainer');
+      var unitClean = (entry.unit || '').replace('.service', '');
+
+      // Filter check
+      if (!activeFilters.has('all') && !activeFilters.has(unitClean)) return;
+
+      // Search filter
+      var search = document.getElementById('logSearch').value.toLowerCase();
+      if (search && !(entry.msg || '').toLowerCase().includes(search) && !unitClean.toLowerCase().includes(search)) return;
+
+      var div = document.createElement('div');
+      div.className = 'log-line';
+      div.setAttribute('data-unit', unitClean);
+
+      var ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '--:--:--';
+      var unitClass = 'log-unit log-unit-' + unitClean;
+      var msgClass = 'log-msg';
+      var msg = entry.msg || '';
+      if (msg.match(/error|Error|ERROR|failed|Failed/i)) msgClass += ' log-msg-error';
+      else if (msg.match(/warn|WARN|Warning/i)) msgClass += ' log-msg-warn';
+
+      div.innerHTML = '<span class="log-ts">' + ts + '</span> <span class="' + unitClass + '">' + unitClean.padEnd(14) + '</span> <span class="' + msgClass + '">' + escapeHtml(msg) + '</span>';
+      container.appendChild(div);
+
+      // Trim DOM
+      while (container.children.length > maxLogEntries) {
+        container.removeChild(container.firstChild);
+      }
+
+      if (document.getElementById('autoScroll').checked) {
+        scrollLogToBottom();
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function scrollLogToBottom() {
+      var c = document.getElementById('logContainer');
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function togglePause() {
+      logPaused = !logPaused;
+      var btn = document.getElementById('pauseBtn');
+      var badge = document.getElementById('streamBadge');
+      if (logPaused) {
+        btn.textContent = 'Resume';
+        badge.className = 'log-badge log-badge-paused';
+        badge.textContent = 'PAUSED';
+      } else {
+        btn.textContent = 'Pause';
+        badge.className = 'log-badge log-badge-live';
+        badge.textContent = 'LIVE';
+      }
+    }
+
+    function clearLogs() {
+      logEntries = [];
+      document.getElementById('logContainer').innerHTML = '';
+    }
+
+    function toggleLogFilter(el) {
+      var unit = el.getAttribute('data-unit');
+      if (unit === 'all') {
+        // Toggle all
+        var allActive = el.classList.contains('active');
+        document.querySelectorAll('.filter-chip').forEach(function(c) {
+          if (allActive) c.classList.remove('active');
+          else c.classList.add('active');
+        });
+        if (allActive) activeFilters.clear();
+        else { activeFilters.clear(); activeFilters.add('all'); activeFilters.add('diva-server'); activeFilters.add('diva-audio'); activeFilters.add('diva-memory'); activeFilters.add('intent-router'); }
+      } else {
+        el.classList.toggle('active');
+        if (el.classList.contains('active')) activeFilters.add(unit);
+        else activeFilters.delete(unit);
+        // Update "all" chip
+        var allChip = document.querySelector('.filter-chip[data-unit="all"]');
+        if (activeFilters.size >= 4) allChip.classList.add('active');
+        else allChip.classList.remove('active');
+      }
+      rerenderLogs();
+    }
+
+    function filterLogs() {
+      rerenderLogs();
+    }
+
+    function rerenderLogs() {
+      document.getElementById('logContainer').innerHTML = '';
+      logEntries.forEach(function(e) { renderLogEntry(e); });
+      scrollLogToBottom();
+    }
+
+
+    // =====================================================================
+    // MEMORY MANAGER
+    // =====================================================================
+
+    async function loadMemoryUsers() {
+      try {
+        var res = await fetch(API + '/api/memory/users');
+        var data = await res.json();
+        var select = document.getElementById('memoryUserSelect');
+        var current = select.value;
+        select.innerHTML = '';
+        (data.users || ['default']).forEach(function(u) {
+          var opt = document.createElement('option');
+          opt.value = u;
+          opt.textContent = u;
+          if (u === current) opt.selected = true;
+          select.appendChild(opt);
+        });
+      } catch(e) { console.error('Memory users error:', e); }
+    }
+
+    async function loadMemories() {
+      var userId = document.getElementById('memoryUserSelect').value;
+      var listEl = document.getElementById('memoryList');
+      var countEl = document.getElementById('memoryCount');
+      
+      listEl.innerHTML = '<div class="memory-empty">Chargement...</div>';
+      
+      try {
+        var res = await fetch(API + '/api/memory/list?user_id=' + encodeURIComponent(userId));
+        var data = await res.json();
+        var memories = data.memories || [];
+        
+        countEl.textContent = memories.length + ' memoire(s)';
+        
+        if (memories.length === 0) {
+          listEl.innerHTML = '<div class="memory-empty">Aucune memoire pour ' + userId + '</div>';
+          return;
+        }
+        
+        listEl.innerHTML = memories.map(function(m) {
+          var idShort = (m.id || '').substring(0, 8);
+          return '<div class="memory-item">' +
+            '<div>' +
+              '<div class="memory-text">' + escapeHtml(m.memory || '(vide)') + '</div>' +
+              '<div class="memory-id">ID: ' + escapeHtml(m.id || '-') + '</div>' +
+            '</div>' +
+            '<button class="danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteMemory(\'' + (m.id || '') + '\')">X</button>' +
+          '</div>';
+        }).join('');
+      } catch(e) {
+        listEl.innerHTML = '<div class="memory-empty">Erreur: ' + e + '</div>';
+      }
+    }
+
+    async function deleteMemory(memoryId) {
+      if (!memoryId || !confirm('Supprimer cette memoire ?')) return;
+      try {
+        await fetch(API + '/api/memory/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memory_id: memoryId }),
+        });
+        loadMemories();
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function addMemoryManual() {
+      var input = document.getElementById('memoryAddInput');
+      var text = input.value.trim();
+      if (!text) return;
+      var userId = document.getElementById('memoryUserSelect').value;
+      try {
+        await fetch(API + '/api/memory/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, text: text }),
+        });
+        input.value = '';
+        setTimeout(loadMemories, 1000);
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+
+    // =====================================================================
+    // NETWORK — WiFi + Bluetooth
+    // =====================================================================
+
+    var pendingWifiSSID = '';
+
+    async function scanWifi() {
+      document.getElementById('wifiNetworks').innerHTML = '<span class="stat-label">Scan en cours...</span>';
+      try {
+        var res = await fetch(API + '/api/network/wifi/status');
+        var data = await res.json();
+        renderWifiStatus(data);
+      } catch(e) {
+        document.getElementById('wifiNetworks').innerHTML = '<span class="stat-label" style="color:var(--red)">Erreur: ' + e + '</span>';
+      }
+    }
+
+    function renderWifiStatus(data) {
+      var statusEl = document.getElementById('wifiStatus');
+      var disconnectBtn = document.getElementById('wifiDisconnectBtn');
+
+      if (data.connected) {
+        statusEl.innerHTML = '<div class="stat"><span class="stat-label">Connecte a</span><span class="stat-value"><span class="badge badge-ok">' + escapeHtml(data.ssid) + '</span></span></div>' +
+          (data.ip ? '<div class="stat"><span class="stat-label">IP</span><span class="stat-value">' + escapeHtml(data.ip) + '</span></div>' : '');
+        disconnectBtn.disabled = false;
+      } else {
+        statusEl.innerHTML = '<div class="stat"><span class="stat-label">Etat</span><span class="stat-value"><span class="badge badge-down">Deconnecte</span></span></div>';
+        disconnectBtn.disabled = true;
+      }
+
+      var networksEl = document.getElementById('wifiNetworks');
+      if (!data.networks || data.networks.length === 0) {
+        networksEl.innerHTML = '<span class="stat-label">Aucun reseau detecte</span>';
+        return;
+      }
+
+      // Sort by signal strength, deduplicate
+      var seen = new Set();
+      var unique = data.networks.filter(function(n) {
+        if (seen.has(n.ssid) || !n.ssid) return false;
+        seen.add(n.ssid);
+        return true;
+      }).sort(function(a, b) { return b.signal - a.signal; });
+
+      networksEl.innerHTML = unique.map(function(n) {
+        var signalBars = n.signal > 75 ? '▂▄▆█' : n.signal > 50 ? '▂▄▆' : n.signal > 25 ? '▂▄' : '▂';
+        var lockIcon = n.security && n.security !== '--' && n.security !== '' ? ' 🔒' : '';
+        var isActive = n.active;
+        return '<div class="stat" style="cursor:' + (isActive ? 'default' : 'pointer') + ';" ' +
+          (isActive ? '' : 'onclick="showWifiConnect(\'' + escapeHtml(n.ssid).replace(/'/g, "\\'") + '\')"') + '>' +
+          '<span class="stat-label">' + escapeHtml(n.ssid) + lockIcon +
+            (isActive ? ' <span class="badge badge-ok" style="margin-left:4px;">connecte</span>' : '') +
+          '</span>' +
+          '<span class="stat-value" style="font-size:0.75rem;color:var(--muted);">' + signalBars + ' ' + n.signal + '%</span>' +
+        '</div>';
+      }).join('');
+    }
+
+    function showWifiConnect(ssid) {
+      pendingWifiSSID = ssid;
+      document.getElementById('wifiConnectSSID').textContent = ssid;
+      document.getElementById('wifiPassword').value = '';
+      document.getElementById('wifiConnectForm').style.display = 'block';
+      document.getElementById('wifiPassword').focus();
+    }
+
+    function cancelWifiConnect() {
+      document.getElementById('wifiConnectForm').style.display = 'none';
+      pendingWifiSSID = '';
+    }
+
+    async function connectWifi() {
+      if (!pendingWifiSSID) return;
+      var password = document.getElementById('wifiPassword').value;
+      var statusEl = document.getElementById('wifiStatus');
+      statusEl.innerHTML = '<span class="stat-label">Connexion a ' + escapeHtml(pendingWifiSSID) + '...</span>';
+      cancelWifiConnect();
+
+      try {
+        var res = await fetch(API + '/api/network/wifi/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ssid: pendingWifiSSID, password: password }),
+        });
+        var data = await res.json();
+        if (res.ok) {
+          setTimeout(scanWifi, 1000);
+        } else {
+          statusEl.innerHTML = '<span class="stat-label" style="color:var(--red)">Echec: ' + escapeHtml(data.error || 'Erreur inconnue') + '</span>';
+          setTimeout(scanWifi, 3000);
+        }
+      } catch(e) {
+        statusEl.innerHTML = '<span class="stat-label" style="color:var(--red)">Erreur: ' + e + '</span>';
+      }
+    }
+
+    async function disconnectWifi() {
+      try {
+        await fetch(API + '/api/network/wifi/disconnect', { method: 'POST' });
+        setTimeout(scanWifi, 1000);
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function fetchBluetoothStatus() {
+      try {
+        var res = await fetch(API + '/api/network/bluetooth/status');
+        var data = await res.json();
+        renderBluetoothStatus(data);
+      } catch(e) {
+        document.getElementById('btStatus').innerHTML = '<span class="stat-label" style="color:var(--red)">Erreur: ' + e + '</span>';
+      }
+    }
+
+    function renderBluetoothStatus(data) {
+      var statusEl = document.getElementById('btStatus');
+      statusEl.innerHTML = '<div class="stat"><span class="stat-label">Etat</span><span class="stat-value"><span class="badge ' + (data.powered ? 'badge-ok' : 'badge-down') + '">' + (data.powered ? 'Actif' : 'Eteint') + '</span></span></div>';
+
+      var pairedEl = document.getElementById('btPairedDevices');
+      if (!data.devices || data.devices.length === 0) {
+        pairedEl.innerHTML = '<span class="stat-label">Aucun appareil appaire</span>';
+        return;
+      }
+
+      pairedEl.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;text-transform:uppercase;">Appareils appaires</div>' +
+        data.devices.map(function(d) {
+          return '<div class="stat">' +
+            '<span class="stat-label">' + escapeHtml(d.name) +
+              ' <span class="badge ' + (d.connected ? 'badge-ok' : 'badge-down') + '" style="margin-left:4px;">' + (d.connected ? 'connecte' : 'deconnecte') + '</span>' +
+            '</span>' +
+            '<span style="display:flex;gap:4px;">' +
+              (d.connected
+                ? '<button style="font-size:0.7rem;padding:2px 8px;" onclick="btDisconnect(\'' + d.mac + '\')">Deconnecter</button>'
+                : '<button style="font-size:0.7rem;padding:2px 8px;" onclick="btConnect(\'' + d.mac + '\')">Connecter</button>') +
+              '<button class="danger" style="font-size:0.7rem;padding:2px 8px;" onclick="btRemove(\'' + d.mac + '\', \'' + escapeHtml(d.name).replace(/'/g, "\\'") + '\')">Supprimer</button>' +
+            '</span>' +
+          '</div>';
+        }).join('');
+    }
+
+    async function scanBluetooth() {
+      var btn = document.getElementById('btScanBtn');
+      var resultsEl = document.getElementById('btScanResults');
+      btn.disabled = true;
+      btn.textContent = 'Recherche...';
+      resultsEl.innerHTML = '<span class="stat-label">Scan en cours (5s)...</span>';
+
+      try {
+        var res = await fetch(API + '/api/network/bluetooth/scan', { method: 'POST' });
+        var data = await res.json();
+        
+        if (!data.devices || data.devices.length === 0) {
+          resultsEl.innerHTML = '<span class="stat-label">Aucun appareil trouve</span>';
+        } else {
+          var unpaired = data.devices.filter(function(d) { return !d.paired && d.name && !d.name.match(/^[0-9A-F]{2}[:-]/i); });
+          if (unpaired.length === 0) {
+            resultsEl.innerHTML = '<span class="stat-label">Aucun nouvel appareil trouve</span>';
+          } else {
+            resultsEl.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;text-transform:uppercase;">Appareils detectes</div>' +
+              unpaired.map(function(d) {
+                return '<div class="stat">' +
+                  '<span class="stat-label">' + escapeHtml(d.name) + '<span style="font-size:0.65rem;color:var(--muted);margin-left:6px;">' + d.mac + '</span></span>' +
+                  '<button style="font-size:0.7rem;padding:2px 8px;" onclick="btPair(\'' + d.mac + '\')">Appairer</button>' +
+                '</div>';
+              }).join('');
+          }
+        }
+      } catch(e) {
+        resultsEl.innerHTML = '<span class="stat-label" style="color:var(--red)">Erreur: ' + e + '</span>';
+      }
+      btn.disabled = false;
+      btn.textContent = 'Rechercher des appareils';
+    }
+
+    async function btPair(mac) {
+      try {
+        var res = await fetch(API + '/api/network/bluetooth/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: mac }),
+        });
+        var data = await res.json();
+        if (res.ok) {
+          fetchBluetoothStatus();
+          document.getElementById('btScanResults').innerHTML = '';
+        } else {
+          alert('Erreur appairage: ' + (data.error || 'Erreur'));
+        }
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function btConnect(mac) {
+      try {
+        await fetch(API + '/api/network/bluetooth/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: mac }),
+        });
+        setTimeout(fetchBluetoothStatus, 1000);
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function btDisconnect(mac) {
+      try {
+        await fetch(API + '/api/network/bluetooth/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: mac }),
+        });
+        setTimeout(fetchBluetoothStatus, 1000);
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+    async function btRemove(mac, name) {
+      if (!confirm('Supprimer ' + name + ' ?')) return;
+      try {
+        await fetch(API + '/api/network/bluetooth/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: mac }),
+        });
+        fetchBluetoothStatus();
+      } catch(e) { alert('Erreur: ' + e); }
+    }
+
+
+    function refreshAll() {
+      fetchStatus();
+      fetchLogs();
+      fetchTimers();
+      fetchDND();
+      document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString('fr-FR')} — auto-refresh 5s`;
+    }
+
+    refreshAll();
+    fetchServiceList();
+    fetchPersonas();
+    fetchHealth();
+    fetchRoutines();
+    fetchSounds();
+    initLiveMonitoring();
+    fetchAudioTuning();
+    loadMemoryUsers();
+    loadMemories();
+    fetchSpeakerTuning();
+    fetchSpeakers();
+    scanWifi();
+    fetchBluetoothStatus();
+    setInterval(function() { fetchHealth(); fetchPersonas(); loadMemoryUsers(); }, 10000);
+    setInterval(function() { scanWifi(); fetchBluetoothStatus(); }, 30000);
+    setInterval(refreshAll, 5000);
+    setInterval(fetchServiceList, 10000);
+  </script>
+</body>
+</html>

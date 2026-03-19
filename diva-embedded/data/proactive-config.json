@@ -1,0 +1,9 @@
+{
+  "companionshipTimes": [
+    "10:00",
+    "16:00"
+  ],
+  "timeAnnouncementInterval": 120,
+  "dailySummaryTime": "21:00",
+  "enabled": true
+}

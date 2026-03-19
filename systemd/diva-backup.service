@@ -1,0 +1,6 @@
+[Unit]
+Description=Diva Daily Encrypted Backup
+
+[Service]
+Type=oneshot
+ExecStart=/opt/diva-watchdog/backup.sh

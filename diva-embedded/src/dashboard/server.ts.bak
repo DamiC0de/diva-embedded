@@ -1,0 +1,1264 @@
+/**
+ * Dashboard HTTP Server — Admin panel for Diva on port 3002
+ * 
+ * Endpoints:
+ * - GET  /                    → Dashboard HTML
+ * - GET  /api/status          → Service health + system metrics
+ * - GET  /api/metrics         → CPU/RAM/NPU/temp real-time
+ * - GET  /api/logs            → Recent interaction logs
+ * - GET  /api/timers          → Active timers
+ * - GET  /api/sounds          → List configurable sounds
+ * - POST /api/sounds/upload   → Upload custom sound
+ * - GET  /api/dnd             → DND status
+ * - POST /api/dnd             → Toggle DND
+ */
+
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { readFile, writeFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
+import { listTimers } from "../tools/timer-manager.js";
+import { getDNDStatus, enableDND, disableDND } from "../tools/dnd-manager.js";
+import { listPersonas, createPersona, deletePersona, type PersonaType } from "../persona/engine.js";
+import { getMedicationLog, getComplianceRate } from "../elderly/medication-manager.js";
+import { getRepetitionStats } from "../elderly/repetition-tracker.js";
+import { getRoutinesForDashboard } from "../tools/routines.js";
+import { getListItems } from "../tools/shopping-list.js";
+import { isPlaying, getCurrentStation } from "../tools/radio.js";
+
+const PORT = 3002;
+const ASSETS_DIR = "/opt/diva-embedded/assets";
+const DASHBOARD_HTML_PATH = "/opt/diva-embedded/src/dashboard/index.html";
+
+// Interaction log ring buffer
+interface LogEntry {
+  timestamp: string;
+  speaker: string;
+  transcription: string;
+  intent: string;
+  category: string;
+  response: string;
+  latencyMs: number;
+}
+
+const interactionLogs: LogEntry[] = [];
+const MAX_LOGS = 200;
+
+export function logInteraction(entry: LogEntry): void {
+  interactionLogs.push(entry);
+  if (interactionLogs.length > MAX_LOGS) {
+    interactionLogs.shift();
+  }
+}
+
+// Configurable sounds mapping
+const SOUND_SLOTS: Record<string, { description: string; defaultFile: string }> = {
+  wakeword_ack: { description: "Wake word detected (confirmation)", defaultFile: "oui.wav" },
+  idle_return: { description: "Return to idle / goodbye", defaultFile: "goodbye.wav" },
+  timer_end: { description: "Timer expired", defaultFile: "bibop.wav" },
+  thinking: { description: "Processing / thinking", defaultFile: "thinking.wav" },
+  listen: { description: "Your turn to speak (beep)", defaultFile: "listen.wav" },
+};
+
+// System metrics helpers
+function getSystemMetrics(): Record<string, unknown> {
+  try {
+    const cpuTemp = execSync("cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0", { timeout: 1000 }).toString().trim();
+    const tempC = parseInt(cpuTemp) / 1000;
+
+    const memInfo = execSync("free -m | awk 'NR==2{printf \"%s %s %s\", $2,$3,$7}'", { timeout: 1000 }).toString().trim().split(" ");
+    const totalMB = parseInt(memInfo[0]);
+    const usedMB = parseInt(memInfo[1]);
+    const availMB = parseInt(memInfo[2]);
+
+    const loadAvg = execSync("cat /proc/loadavg", { timeout: 1000 }).toString().trim().split(" ");
+    
+    const uptime = execSync("uptime -p", { timeout: 1000 }).toString().trim();
+
+    // NPU usage (check if rkllama process exists)
+    let npuActive = false;
+    try {
+      execSync("pgrep -f rkllama", { timeout: 1000 });
+      npuActive = true;
+    } catch {}
+
+    // Disk usage
+    const diskInfo = execSync("df -h / | awk 'NR==2{printf \"%s %s %s %s\", $2,$3,$4,$5}'", { timeout: 1000 }).toString().trim().split(" ");
+
+    return {
+      cpu: {
+        tempC: Math.round(tempC * 10) / 10,
+        load1m: parseFloat(loadAvg[0]),
+        load5m: parseFloat(loadAvg[1]),
+        load15m: parseFloat(loadAvg[2]),
+      },
+      memory: {
+        totalMB,
+        usedMB,
+        availMB,
+        usedPercent: Math.round((usedMB / totalMB) * 100),
+      },
+      npu: {
+        active: npuActive,
+      },
+      disk: {
+        total: diskInfo[0],
+        used: diskInfo[1],
+        avail: diskInfo[2],
+        usedPercent: diskInfo[3],
+      },
+      uptime,
+    };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+async function checkServiceHealth(): Promise<Record<string, { status: string; latencyMs: number }>> {
+  const services: Record<string, string> = {
+    "diva-audio": "http://localhost:9010/health",
+    "intent-router": "http://localhost:8882/health",
+    "diva-memory": "http://localhost:9002/health",
+    "stt-npu": "http://localhost:8881/health",
+    "piper-tts": "http://localhost:8880/health",
+    "qwen-npu": "http://localhost:8080/v1/models",
+    "searxng": "http://localhost:8888/healthz",
+    "embedding": "http://localhost:8883/health",
+  };
+
+  const results: Record<string, { status: string; latencyMs: number }> = {};
+
+  await Promise.all(
+    Object.entries(services).map(async ([name, url]) => {
+      const t0 = Date.now();
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        results[name] = {
+          status: res.ok ? "ok" : `error:${res.status}`,
+          latencyMs: Date.now() - t0,
+        };
+      } catch {
+        results[name] = { status: "down", latencyMs: Date.now() - t0 };
+      }
+    })
+  );
+
+  return results;
+}
+
+async function listSounds(): Promise<Record<string, { slot: string; description: string; currentFile: string; files: string[] }>> {
+  const result: Record<string, { slot: string; description: string; currentFile: string; files: string[] }> = {};
+
+  // List available wav files in assets
+  let wavFiles: string[] = [];
+  try {
+    const files = await readdir(ASSETS_DIR);
+    wavFiles = files.filter((f) => f.endsWith(".wav"));
+  } catch {}
+
+  for (const [slot, info] of Object.entries(SOUND_SLOTS)) {
+    result[slot] = {
+      slot,
+      description: info.description,
+      currentFile: info.defaultFile,
+      files: wavFiles,
+    };
+  }
+
+  return result;
+}
+
+// Parse multipart form data (simple implementation for file upload)
+async function parseMultipart(req: IncomingMessage): Promise<{ fields: Record<string, string>; file?: { name: string; data: Buffer } }> {
+  return new Promise((resolve, reject) => {
+    const boundary = req.headers["content-type"]?.match(/boundary=(.+)/)?.[1];
+    if (!boundary) return reject(new Error("No boundary"));
+
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const body = Buffer.concat(chunks);
+      const parts = body.toString("binary").split(`--${boundary}`);
+      const fields: Record<string, string> = {};
+      let file: { name: string; data: Buffer } | undefined;
+
+      for (const part of parts) {
+        if (part.includes("filename=")) {
+          const nameMatch = part.match(/filename="(.+?)"/);
+          const headerEnd = part.indexOf("\r\n\r\n") + 4;
+          const dataEnd = part.lastIndexOf("\r\n");
+          if (nameMatch && headerEnd > 3 && dataEnd > headerEnd) {
+            file = {
+              name: nameMatch[1],
+              data: Buffer.from(part.slice(headerEnd, dataEnd), "binary"),
+            };
+          }
+        } else if (part.includes("name=")) {
+          const nameMatch = part.match(/name="(.+?)"/);
+          const headerEnd = part.indexOf("\r\n\r\n") + 4;
+          const dataEnd = part.lastIndexOf("\r\n");
+          if (nameMatch && headerEnd > 3) {
+            fields[nameMatch[1]] = part.slice(headerEnd, dataEnd).trim();
+          }
+        }
+      }
+
+      resolve({ fields, file });
+    });
+    req.on("error", reject);
+  });
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
+async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+  const path = url.pathname;
+
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  try {
+    // Dashboard HTML
+    if (path === "/" && req.method === "GET") {
+      const html = await readFile(DASHBOARD_HTML_PATH, "utf-8");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+      return;
+    }
+
+    // API endpoints
+    if (path === "/api/status" && req.method === "GET") {
+      const services = await checkServiceHealth();
+      const metrics = getSystemMetrics();
+      respond(res, 200, { services, metrics });
+      return;
+    }
+
+    if (path === "/api/metrics" && req.method === "GET") {
+      respond(res, 200, getSystemMetrics());
+      return;
+    }
+
+    if (path === "/api/logs" && req.method === "GET") {
+      const limit = parseInt(url.searchParams.get("limit") ?? "50");
+      respond(res, 200, { logs: interactionLogs.slice(-limit) });
+      return;
+    }
+
+    if (path === "/api/timers" && req.method === "GET") {
+      respond(res, 200, { timers: listTimers() });
+      return;
+    }
+
+    if (path === "/api/sounds" && req.method === "GET") {
+      const sounds = await listSounds();
+      respond(res, 200, { sounds });
+      return;
+    }
+
+    if (path === "/api/sounds/upload" && req.method === "POST") {
+      const { fields, file } = await parseMultipart(req);
+      if (!file || !file.name.endsWith(".wav")) {
+        respond(res, 400, { error: "Only .wav files accepted" });
+        return;
+      }
+      const dest = join(ASSETS_DIR, file.name);
+      await writeFile(dest, file.data);
+      respond(res, 200, { uploaded: file.name, path: dest, size: file.data.length });
+      return;
+    }
+
+    if (path === "/api/dnd" && req.method === "GET") {
+      respond(res, 200, getDNDStatus());
+      return;
+    }
+
+    if (path === "/api/dnd" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      if (body.enable) {
+        enableDND((body.durationMin ?? 480) * 60 * 1000);
+      } else {
+        disableDND();
+      }
+      respond(res, 200, getDNDStatus());
+      return;
+    }
+
+    // Personas
+    if (path === "/api/personas" && req.method === "GET") {
+      respond(res, 200, { personas: listPersonas() });
+      return;
+    }
+
+    if (path === "/api/personas" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const profile = createPersona(body.id, body.name, body.type as PersonaType, body.greetingName);
+      respond(res, 200, profile);
+      return;
+    }
+
+    if (path.startsWith("/api/personas/") && req.method === "DELETE") {
+      const id = path.split("/").pop() ?? "";
+      respond(res, 200, { deleted: deletePersona(id) });
+      return;
+    }
+
+    // Health / Elderly
+    if (path === "/api/health/medications" && req.method === "GET") {
+      const days = parseInt(url.searchParams.get("days") ?? "7");
+      respond(res, 200, {
+        log: getMedicationLog(days),
+        compliance: getComplianceRate(days),
+      });
+      return;
+    }
+
+    if (path === "/api/health/repetitions" && req.method === "GET") {
+      const days = parseInt(url.searchParams.get("days") ?? "7");
+      respond(res, 200, getRepetitionStats(days));
+      return;
+    }
+
+    // Routines
+    if (path === "/api/routines" && req.method === "GET") {
+      respond(res, 200, { routines: getRoutinesForDashboard() });
+      return;
+    }
+
+    // Shopping list
+    if (path === "/api/shopping" && req.method === "GET") {
+      respond(res, 200, { items: getListItems() });
+      return;
+    }
+
+    // Radio
+    if (path === "/api/radio" && req.method === "GET") {
+      respond(res, 200, { playing: isPlaying(), station: getCurrentStation() });
+      return;
+    }
+
+
+    // Service management (start/stop/restart)
+    if (path === "/api/services/action" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const service = body.service as string;
+      const action = body.action as string;
+
+      // Whitelist of allowed services
+      const allowedServices = [
+        "diva-server", "diva-audio", "diva-memory",
+        "intent-router", "diva-embedded",
+      ];
+      const allowedActions = ["start", "stop", "restart", "status"];
+
+      if (!allowedServices.includes(service)) {
+        respond(res, 400, { error: `Service not allowed: ${service}` });
+        return;
+      }
+      if (!allowedActions.includes(action)) {
+        respond(res, 400, { error: `Action not allowed: ${action}` });
+        return;
+      }
+
+      try {
+        const output = execSync(`systemctl ${action} ${service} 2>&1`, { timeout: 15000 }).toString().trim();
+        // After action, get current status
+        const statusOutput = execSync(`systemctl is-active ${service} 2>&1 || true`, { timeout: 5000 }).toString().trim();
+        respond(res, 200, { service, action, status: statusOutput, output });
+      } catch (err: any) {
+        const statusOutput = execSync(`systemctl is-active ${service} 2>&1 || true`, { timeout: 5000 }).toString().trim();
+        respond(res, 200, { service, action, status: statusOutput, output: err.stderr?.toString() || err.message });
+      }
+      return;
+    }
+
+    // List all diva services with detailed status
+    if (path === "/api/services/list" && req.method === "GET") {
+      const services = ["diva-server", "diva-audio", "diva-memory", "intent-router"];
+      const result: Record<string, { active: string; pid: string; memory: string; uptime: string }> = {};
+
+      for (const svc of services) {
+        try {
+          const active = execSync(`systemctl is-active ${svc} 2>&1 || true`, { timeout: 3000 }).toString().trim();
+          let pid = "-", memory = "-", uptime = "-";
+          if (active === "active") {
+            try {
+              pid = execSync(`systemctl show ${svc} --property=MainPID --value 2>/dev/null`, { timeout: 3000 }).toString().trim();
+              memory = execSync(`systemctl show ${svc} --property=MemoryCurrent --value 2>/dev/null`, { timeout: 3000 }).toString().trim();
+              const ts = execSync(`systemctl show ${svc} --property=ActiveEnterTimestampMonotonic --value 2>/dev/null`, { timeout: 3000 }).toString().trim();
+              const mono = execSync("cat /proc/uptime | awk '{print $1}'", { timeout: 3000 }).toString().trim();
+              if (ts && mono) {
+                const startSec = parseInt(ts) / 1000000; // monotonic is in microseconds
+                const nowSec = parseFloat(mono);
+                const diffSec = nowSec - startSec;
+                const mins = Math.floor(diffSec / 60);
+                const hrs = Math.floor(mins / 60);
+                uptime = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`;
+              }
+            } catch {}
+          }
+          result[svc] = { active, pid, memory, uptime };
+        } catch {
+          result[svc] = { active: "unknown", pid: "-", memory: "-", uptime: "-" };
+        }
+      }
+      respond(res, 200, { services: result });
+      return;
+    }
+
+    // Kill all diva processes (emergency stop)
+    if (path === "/api/services/kill-all" && req.method === "POST") {
+      try {
+        execSync("systemctl stop diva-audio diva-memory intent-router 2>&1 || true", { timeout: 10000 });
+        execSync("pkill -9 arecord 2>&1 || true", { timeout: 3000 });
+        execSync("pkill -f mpv 2>&1 || true", { timeout: 3000 });
+        respond(res, 200, { status: "all services stopped" });
+      } catch (err: any) {
+        respond(res, 200, { status: "partial stop", error: err.message });
+      }
+      // Note: diva-server itself stays alive since it's serving this request
+      // It will be stopped by systemd if the user also stops diva-server
+      return;
+    }
+
+    // Start all diva services
+    if (path === "/api/services/start-all" && req.method === "POST") {
+      try {
+        execSync("systemctl start diva-audio diva-memory intent-router 2>&1 || true", { timeout: 15000 });
+        respond(res, 200, { status: "all services started" });
+      } catch (err: any) {
+        respond(res, 200, { status: "partial start", error: err.message });
+      }
+      return;
+    }
+
+
+    // =====================================================================
+    // TUNING — Audio / Wake Word / VAD / Speaker ID
+    // =====================================================================
+
+    // Audio server tuning (wake word, VAD)
+    if (path === "/api/tuning/audio" && req.method === "GET") {
+      try {
+        const r = await fetch("http://localhost:9010/tuning", { signal: AbortSignal.timeout(3000) });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Audio server unreachable" });
+      }
+      return;
+    }
+
+    if (path === "/api/tuning/audio" && req.method === "POST") {
+      try {
+        const body = await readBody(req);
+        const r = await fetch("http://localhost:9010/tuning", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(3000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Audio server unreachable" });
+      }
+      return;
+    }
+
+    // Speaker ID tuning
+    if (path === "/api/tuning/speaker" && req.method === "GET") {
+      try {
+        const r = await fetch("http://localhost:9002/speaker/tuning", { signal: AbortSignal.timeout(3000) });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Memory service unreachable" });
+      }
+      return;
+    }
+
+    if (path === "/api/tuning/speaker" && req.method === "POST") {
+      try {
+        const body = await readBody(req);
+        const r = await fetch("http://localhost:9002/speaker/tuning", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(3000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Memory service unreachable" });
+      }
+      return;
+    }
+
+    // Registered speakers list with details
+    if (path === "/api/speakers" && req.method === "GET") {
+      try {
+        const r = await fetch("http://localhost:9002/speaker/list", { signal: AbortSignal.timeout(3000) });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Memory service unreachable" });
+      }
+      return;
+    }
+
+    // Delete a registered speaker
+    if (path === "/api/speakers/delete" && req.method === "POST") {
+      try {
+        const body = await readBody(req);
+        const parsed = JSON.parse(body);
+        const name = parsed.name || "";
+        // Delete speaker embedding
+        const r = await fetch("http://localhost:9002/speaker/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(3000),
+        });
+        // Also delete persona file
+        if (name) {
+          deletePersona(name);
+        }
+        respond(res, r.status, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: "Memory service unreachable" });
+      }
+      return;
+    }
+
+
+    // =====================================================================
+    // LIVE LOGS — SSE stream + journalctl fetch
+    // =====================================================================
+
+    // SSE stream: real-time logs from all diva services
+    if (path === "/api/logs/stream" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.write("data: {}\"connected\"\n\n");
+
+      const services = url.searchParams.get("services") || "diva-server,diva-audio,diva-memory,intent-router";
+      const units = services.split(",").map((s: string) => `-u ${s.trim()}`).join(" ");
+
+      const child = spawn("journalctl", [
+        ...units.split(" "),
+        "-f", "--no-pager", "-o", "json", "--since", "now",
+      ], { shell: true });
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            const msg = entry.MESSAGE || "";
+            // Filter out noisy health check logs
+            if (msg.includes("GET /health") || msg.includes("GET /tuning")) continue;
+            const data = {
+              ts: entry.__REALTIME_TIMESTAMP
+                ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
+                : new Date().toISOString(),
+              unit: entry._SYSTEMD_UNIT || "unknown",
+              msg,
+              priority: entry.PRIORITY || "6",
+            };
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+          } catch {
+            // non-JSON line, send raw
+            res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), unit: "raw", msg: line, priority: "6" })}\n\n`);
+          }
+        }
+      });
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), unit: "stderr", msg: chunk.toString().trim(), priority: "3" })}\n\n`);
+      });
+
+      req.on("close", () => {
+        child.kill("SIGTERM");
+      });
+
+      return;
+    }
+
+    // Fetch recent logs (non-streaming, for initial load)
+    if (path === "/api/logs/journalctl" && req.method === "GET") {
+      const services = url.searchParams.get("services") || "diva-server,diva-audio,diva-memory,intent-router";
+      const lines = parseInt(url.searchParams.get("lines") || "100");
+      const units = services.split(",").map((s: string) => `-u ${s.trim()}`).join(" ");
+
+      try {
+        const raw = execSync(
+          `journalctl ${units} --no-pager -o json -n ${lines} 2>/dev/null || true`,
+          { timeout: 5000, maxBuffer: 1024 * 1024 }
+        ).toString();
+
+        const entries = raw.split("\n").filter(Boolean).map((line: string) => {
+          try {
+            const entry = JSON.parse(line);
+            const msg2 = entry.MESSAGE || "";
+            // Filter health check noise
+            if (msg2.includes("GET /health") || msg2.includes("GET /tuning")) return null;
+            return {
+              ts: entry.__REALTIME_TIMESTAMP
+                ? new Date(parseInt(entry.__REALTIME_TIMESTAMP) / 1000).toISOString()
+                : "",
+              unit: (entry._SYSTEMD_UNIT || "").replace(".service", ""),
+              msg: msg2,
+              priority: entry.PRIORITY || "6",
+            };
+          } catch {
+            return null;
+          }
+        }).filter(Boolean);
+
+        respond(res, 200, { entries });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+
+    // =====================================================================
+    // MEMORY — Mem0 viewer / manager
+    // =====================================================================
+
+    // List all users that have memories
+    if (path === "/api/memory/users" && req.method === "GET") {
+      try {
+        // Get speakers + always include "default"
+        const speakersRes = await fetch("http://localhost:9002/speaker/list", { signal: AbortSignal.timeout(3000) });
+        const speakersData = (await speakersRes.json()) as { speakers?: Record<string, unknown> };
+        const users = ["default", ...Object.keys(speakersData.speakers ?? {})];
+        respond(res, 200, { users });
+      } catch {
+        respond(res, 200, { users: ["default"] });
+      }
+      return;
+    }
+
+    // Get all memories for a user
+    if (path === "/api/memory/list" && req.method === "GET") {
+      const userId = url.searchParams.get("user_id") || "default";
+      try {
+        const r = await fetch("http://localhost:9002/memory/all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = (await r.json()) as { memories?: Array<{ memory: string; id: string }> };
+        respond(res, 200, { user_id: userId, memories: data.memories ?? [] });
+      } catch (err) {
+        respond(res, 200, { user_id: userId, memories: [], error: String(err) });
+      }
+      return;
+    }
+
+    // Search memories for a user
+    if (path === "/api/memory/search" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: body.user_id || "default", query: body.query || "" }),
+          signal: AbortSignal.timeout(5000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 200, { memories: [], error: String(err) });
+      }
+      return;
+    }
+
+    // Delete a specific memory
+    if (path === "/api/memory/delete" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memory_id: body.memory_id }),
+          signal: AbortSignal.timeout(5000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Add a memory manually (for testing)
+    if (path === "/api/memory/add" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      try {
+        const r = await fetch("http://localhost:9002/memory/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: body.user_id || "default", text: body.text }),
+          signal: AbortSignal.timeout(10000),
+        });
+        respond(res, 200, await r.json());
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+
+    // Serve a WAV file from assets for browser playback
+    if (path.startsWith("/api/sounds/play/") && req.method === "GET") {
+      const filename = decodeURIComponent(path.replace("/api/sounds/play/", ""));
+      // Security: only allow .wav files from assets dir, no path traversal
+      if (filename.includes("..") || filename.includes("/") || !filename.endsWith(".wav")) {
+        respond(res, 400, { error: "Invalid filename" });
+        return;
+      }
+      const filePath = join(ASSETS_DIR, filename);
+      if (!existsSync(filePath)) {
+        respond(res, 404, { error: "File not found" });
+        return;
+      }
+      try {
+        const data = await readFile(filePath);
+        res.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Length": data.length.toString(),
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(data);
+      } catch {
+        respond(res, 500, { error: "Read error" });
+      }
+      return;
+    }
+
+// --- MUSIC ACCOUNTS ENDPOINTS ---
+// Insert these before the 404 handler
+
+    // =====================================================================
+    // MUSIC — Spotify OAuth + YouTube Music cookies
+    // =====================================================================
+
+    // Spotify: get config status
+    if (path === "/api/music/spotify/status" && req.method === "GET") {
+      const spotifyMod = await import("../music/spotify-player.js");
+      respond(res, 200, {
+        configured: spotifyMod.isConfigured(),
+        authenticated: spotifyMod.isAuthenticated(),
+      });
+      return;
+    }
+
+    // Spotify: save client credentials
+    if (path === "/api/music/spotify/config" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const spotifyMod = await import("../music/spotify-player.js");
+      spotifyMod.saveConfig({
+        client_id: body.client_id,
+        client_secret: body.client_secret,
+        redirect_uri: body.redirect_uri || `http://${req.headers.host}/api/music/spotify/callback`,
+      });
+      respond(res, 200, { status: "ok" });
+      return;
+    }
+
+    // Spotify: start OAuth flow (redirect to Spotify)
+    if (path === "/api/music/spotify/authorize" && req.method === "GET") {
+      const spotifyMod = await import("../music/spotify-player.js");
+      const authUrl = spotifyMod.getAuthorizeUrl();
+      if (!authUrl) {
+        respond(res, 400, { error: "Spotify not configured. Set client_id and client_secret first." });
+        return;
+      }
+      res.writeHead(302, { Location: authUrl });
+      res.end();
+      return;
+    }
+
+    // Spotify: OAuth callback (receives code from Spotify)
+    if (path === "/api/music/spotify/callback" && req.method === "GET") {
+      const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
+      if (error || !code) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<html><body><h2>Erreur Spotify</h2><p>${error || "Pas de code reçu"}</p><p><a href="/">Retour</a></p></body></html>`);
+        return;
+      }
+      const spotifyMod = await import("../music/spotify-player.js");
+      const success = await spotifyMod.exchangeCode(code);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      if (success) {
+        res.end(`<html><body><h2>Spotify connecté !</h2><p>Tu peux maintenant demander à Diva de jouer ta musique Spotify.</p><p><a href="/">Retour au dashboard</a></p></body></html>`);
+      } else {
+        res.end(`<html><body><h2>Erreur</h2><p>L'authentification a échoué. Réessaie.</p><p><a href="/">Retour</a></p></body></html>`);
+      }
+      return;
+    }
+
+    // Spotify: disconnect (delete tokens)
+    if (path === "/api/music/spotify/disconnect" && req.method === "POST") {
+      const { unlinkSync } = await import("node:fs");
+      try { unlinkSync("/opt/diva-embedded/data/music/spotify-tokens.json"); } catch {}
+      respond(res, 200, { status: "disconnected" });
+      return;
+    }
+
+    // YouTube Music: cookie status
+    if (path === "/api/music/youtube/status" && req.method === "GET") {
+      const ytMod = await import("../music/youtube-player.js");
+      respond(res, 200, { hasCookies: ytMod.hasCookies() });
+      return;
+    }
+
+    // YouTube Music: upload cookies (Netscape cookie format)
+    if (path === "/api/music/youtube/cookies" && req.method === "POST") {
+      const body = await readBody(req);
+      const parsed = JSON.parse(body);
+      const cookies = parsed.cookies || "";
+      if (!cookies) {
+        respond(res, 400, { error: "No cookies provided" });
+        return;
+      }
+      await writeFile("/opt/diva-embedded/data/music/ytmusic-cookies.txt", cookies);
+      respond(res, 200, { status: "ok" });
+      return;
+    }
+
+    // YouTube Music: delete cookies
+    if (path === "/api/music/youtube/disconnect" && req.method === "POST") {
+      const { unlinkSync } = await import("node:fs");
+      try { unlinkSync("/opt/diva-embedded/data/music/ytmusic-cookies.txt"); } catch {}
+      respond(res, 200, { status: "disconnected" });
+      return;
+    }
+
+    // Music: current playback status (all sources)
+    if (path === "/api/music/status" && req.method === "GET") {
+      const ytMod = await import("../music/youtube-player.js");
+      const spotifyMod = await import("../music/spotify-player.js");
+      const ytTrack = ytMod.getCurrentTrack();
+      let spTrack = null;
+      if (spotifyMod.isAuthenticated()) {
+        try { spTrack = await spotifyMod.getCurrentlyPlaying(); } catch {}
+      }
+      respond(res, 200, {
+        youtube: { playing: ytMod.isPlaying(), track: ytTrack },
+        spotify: { authenticated: spotifyMod.isAuthenticated(), track: spTrack },
+        radio: { playing: isPlaying(), station: getCurrentStation() },
+      });
+      return;
+    }
+
+    // Accounts page (HTML)
+    if (path === "/accounts" && req.method === "GET") {
+      const accountsHtml = generateAccountsPage();
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(accountsHtml);
+      return;
+    }
+
+
+
+    // =====================================================================
+    // NETWORK — WiFi + Bluetooth management
+    // =====================================================================
+
+    // WiFi: current status
+    if (path === "/api/network/wifi/status" && req.method === "GET") {
+      try {
+        const active = execSync("nmcli -t -f active,ssid,signal,security dev wifi list 2>/dev/null | head -20", { timeout: 10000 }).toString().trim();
+        const connection = execSync("nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | grep wl || true", { timeout: 5000 }).toString().trim();
+        const ip = execSync("ip -4 addr show wlP2p33s0 2>/dev/null | grep inet | awk '{print $2}' || true", { timeout: 3000 }).toString().trim();
+        
+        let connectedSSID = "";
+        if (connection) {
+          connectedSSID = connection.split(":")[0] || "";
+        }
+        
+        const networks = active.split("\n").filter(Boolean).map(line => {
+          const parts = line.split(":");
+          return {
+            active: parts[0] === "yes",
+            ssid: parts[1] || "",
+            signal: parseInt(parts[2] || "0"),
+            security: parts[3] || "",
+          };
+        }).filter(n => n.ssid);
+
+        respond(res, 200, { connected: !!connectedSSID, ssid: connectedSSID, ip, networks });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // WiFi: connect to a network
+    if (path === "/api/network/wifi/connect" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const ssid = (body.ssid || "").replace(/[^a-zA-Z0-9_ \-\.]/g, "");
+      const password = body.password || "";
+      if (!ssid) {
+        respond(res, 400, { error: "SSID required" });
+        return;
+      }
+      try {
+        if (password) {
+          execSync(`nmcli device wifi connect "${ssid}" password "${password.replace(/"/g, '\\"')}" 2>&1`, { timeout: 30000 });
+        } else {
+          execSync(`nmcli device wifi connect "${ssid}" 2>&1`, { timeout: 30000 });
+        }
+        const ip = execSync("ip -4 addr show wlP2p33s0 2>/dev/null | grep inet | awk '{print $2}' || true", { timeout: 3000 }).toString().trim();
+        respond(res, 200, { status: "connected", ssid, ip });
+      } catch (err: any) {
+        respond(res, 400, { error: err.stderr?.toString() || err.message || String(err) });
+      }
+      return;
+    }
+
+    // WiFi: disconnect
+    if (path === "/api/network/wifi/disconnect" && req.method === "POST") {
+      try {
+        execSync("nmcli device disconnect wlP2p33s0 2>&1 || true", { timeout: 10000 });
+        respond(res, 200, { status: "disconnected" });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // WiFi: forget a saved connection
+    if (path === "/api/network/wifi/forget" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const ssid = (body.ssid || "").replace(/[^a-zA-Z0-9_ \-\.]/g, "");
+      if (!ssid) { respond(res, 400, { error: "SSID required" }); return; }
+      try {
+        execSync(`nmcli connection delete "${ssid}" 2>&1 || true`, { timeout: 10000 });
+        respond(res, 200, { status: "forgotten", ssid });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Bluetooth: status + paired devices
+    if (path === "/api/network/bluetooth/status" && req.method === "GET") {
+      try {
+        const powered = execSync("bluetoothctl show 2>/dev/null | grep 'Powered:' | awk '{print $2}'", { timeout: 5000 }).toString().trim();
+        const pairedRaw = execSync("bluetoothctl devices Paired 2>/dev/null || bluetoothctl paired-devices 2>/dev/null || true", { timeout: 5000 }).toString().trim();
+        const connectedRaw = execSync("bluetoothctl devices Connected 2>/dev/null || true", { timeout: 5000 }).toString().trim();
+        
+        const paired = pairedRaw.split("\n").filter(Boolean).map(line => {
+          const match = line.match(/Device\s+([0-9A-F:]+)\s+(.+)/i);
+          if (!match) return null;
+          return { mac: match[1], name: match[2] };
+        }).filter(Boolean);
+
+        const connectedMacs = new Set(connectedRaw.split("\n").filter(Boolean).map(line => {
+          const match = line.match(/Device\s+([0-9A-F:]+)/i);
+          return match ? match[1] : "";
+        }).filter(Boolean));
+
+        const devices = paired.map((d: any) => ({
+          ...d,
+          connected: connectedMacs.has(d.mac),
+        }));
+
+        respond(res, 200, { powered: powered === "yes", devices });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Bluetooth: scan for nearby devices
+    if (path === "/api/network/bluetooth/scan" && req.method === "POST") {
+      try {
+        // Start scan, wait a few seconds, then collect results
+        execSync("bluetoothctl --timeout 5 scan on 2>/dev/null || true", { timeout: 10000 });
+        const raw = execSync("bluetoothctl devices 2>/dev/null || true", { timeout: 5000 }).toString().trim();
+        const pairedRaw = execSync("bluetoothctl devices Paired 2>/dev/null || bluetoothctl paired-devices 2>/dev/null || true", { timeout: 5000 }).toString().trim();
+        
+        const pairedMacs = new Set(pairedRaw.split("\n").filter(Boolean).map(line => {
+          const match = line.match(/Device\s+([0-9A-F:]+)/i);
+          return match ? match[1] : "";
+        }).filter(Boolean));
+
+        const devices = raw.split("\n").filter(Boolean).map(line => {
+          const match = line.match(/Device\s+([0-9A-F:]+)\s+(.+)/i);
+          if (!match) return null;
+          return { mac: match[1], name: match[2], paired: pairedMacs.has(match[1]) };
+        }).filter(Boolean);
+
+        respond(res, 200, { devices });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Bluetooth: pair + connect
+    if (path === "/api/network/bluetooth/pair" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const mac = (body.mac || "").replace(/[^0-9A-Fa-f:]/g, "");
+      if (!mac) { respond(res, 400, { error: "MAC address required" }); return; }
+      try {
+        execSync(`bluetoothctl pair ${mac} 2>&1 || true`, { timeout: 15000 });
+        execSync(`bluetoothctl trust ${mac} 2>&1 || true`, { timeout: 5000 });
+        execSync(`bluetoothctl connect ${mac} 2>&1 || true`, { timeout: 10000 });
+        respond(res, 200, { status: "paired", mac });
+      } catch (err: any) {
+        respond(res, 400, { error: err.stderr?.toString() || err.message });
+      }
+      return;
+    }
+
+    // Bluetooth: connect (already paired)
+    if (path === "/api/network/bluetooth/connect" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const mac = (body.mac || "").replace(/[^0-9A-Fa-f:]/g, "");
+      if (!mac) { respond(res, 400, { error: "MAC address required" }); return; }
+      try {
+        execSync(`bluetoothctl connect ${mac} 2>&1`, { timeout: 10000 });
+        respond(res, 200, { status: "connected", mac });
+      } catch (err: any) {
+        respond(res, 400, { error: err.stderr?.toString() || err.message });
+      }
+      return;
+    }
+
+    // Bluetooth: disconnect
+    if (path === "/api/network/bluetooth/disconnect" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const mac = (body.mac || "").replace(/[^0-9A-Fa-f:]/g, "");
+      if (!mac) { respond(res, 400, { error: "MAC address required" }); return; }
+      try {
+        execSync(`bluetoothctl disconnect ${mac} 2>&1`, { timeout: 10000 });
+        respond(res, 200, { status: "disconnected", mac });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+    // Bluetooth: remove (unpair)
+    if (path === "/api/network/bluetooth/remove" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const mac = (body.mac || "").replace(/[^0-9A-Fa-f:]/g, "");
+      if (!mac) { respond(res, 400, { error: "MAC address required" }); return; }
+      try {
+        execSync(`bluetoothctl remove ${mac} 2>&1`, { timeout: 10000 });
+        respond(res, 200, { status: "removed", mac });
+      } catch (err) {
+        respond(res, 500, { error: String(err) });
+      }
+      return;
+    }
+
+
+    // 404
+    respond(res, 404, { error: "Not found" });
+  } catch (err) {
+    console.error("[DASHBOARD] Error:", err);
+    respond(res, 500, { error: String(err) });
+  }
+}
+
+function respond(res: ServerResponse, code: number, data: unknown): void {
+  res.writeHead(code, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(data));
+}
+
+
+function generateAccountsPage(): string {
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diva — Comptes Musique</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f23; color: #e0e0e0; padding: 20px; }
+    h1 { color: #bb86fc; margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 30px; }
+    .card { background: #1a1a2e; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid #333; }
+    .card h2 { color: #03dac6; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+    .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; }
+    .status.ok { background: #1b5e20; color: #a5d6a7; }
+    .status.pending { background: #4a3800; color: #ffd54f; }
+    .status.off { background: #3e2723; color: #ef9a9a; }
+    input, textarea { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #555; background: #252540; color: #e0e0e0; margin: 6px 0 12px 0; font-family: monospace; }
+    button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95em; margin-right: 8px; }
+    .btn-primary { background: #bb86fc; color: #000; }
+    .btn-danger { background: #cf6679; color: #000; }
+    .btn-secondary { background: #333; color: #e0e0e0; }
+    a { color: #bb86fc; }
+    .help { color: #888; font-size: 0.85em; margin-top: 8px; line-height: 1.5; }
+    #msg { margin-top: 12px; padding: 8px; border-radius: 6px; display: none; }
+    #msg.success { display: block; background: #1b5e20; color: #a5d6a7; }
+    #msg.error { display: block; background: #3e2723; color: #ef9a9a; }
+    .back { margin-bottom: 20px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <a href="/" class="back">&larr; Retour au dashboard</a>
+  <h1>Comptes Musique</h1>
+  <p class="subtitle">Connecte tes comptes pour que Diva puisse jouer ta musique personnalisee.</p>
+
+  <div class="card" id="spotify-card">
+    <h2>Spotify</h2>
+    <div id="spotify-status">Chargement...</div>
+    <div id="spotify-config" style="display:none; margin-top:16px;">
+      <p>Pour connecter Spotify, tu as besoin d'une app Spotify Developer :</p>
+      <p class="help">1. Va sur <a href="https://developer.spotify.com/dashboard" target="_blank">developer.spotify.com/dashboard</a><br>
+      2. Cree une app avec le Redirect URI : <code id="redirect-uri"></code><br>
+      3. Copie le Client ID et Client Secret ci-dessous</p>
+      <label>Client ID</label>
+      <input type="text" id="sp-client-id" placeholder="abc123...">
+      <label>Client Secret</label>
+      <input type="password" id="sp-client-secret" placeholder="xyz789...">
+      <button class="btn-primary" onclick="saveSpotifyConfig()">Sauvegarder et connecter</button>
+    </div>
+    <div id="spotify-connected" style="display:none; margin-top:16px;">
+      <button class="btn-danger" onclick="disconnectSpotify()">Deconnecter Spotify</button>
+    </div>
+  </div>
+
+  <div class="card" id="youtube-card">
+    <h2>YouTube Music</h2>
+    <div id="youtube-status">Chargement...</div>
+    <div id="youtube-noauth" style="margin-top:16px;">
+      <p class="help">Sans compte, Diva peut deja chercher et jouer n'importe quelle musique YouTube.<br>
+      Pour acceder a tes playlists et recommandations, importe tes cookies YouTube :</p>
+      <p class="help">1. Installe l'extension <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank">Get cookies.txt</a> dans ton navigateur<br>
+      2. Va sur <a href="https://music.youtube.com" target="_blank">music.youtube.com</a> et connecte-toi<br>
+      3. Exporte les cookies et colle le contenu ci-dessous</p>
+      <textarea id="yt-cookies" rows="6" placeholder="# Netscape HTTP Cookie File..."></textarea>
+      <button class="btn-primary" onclick="saveYTCookies()">Importer les cookies</button>
+      <button class="btn-danger" onclick="disconnectYT()" id="yt-disconnect" style="display:none;">Supprimer les cookies</button>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+
+  <script>
+    const API = '';
+    const redirectUri = window.location.origin + '/api/music/spotify/callback';
+    document.getElementById('redirect-uri').textContent = redirectUri;
+
+    function showMsg(text, type) {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = type;
+      setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    async function loadStatus() {
+      // Spotify
+      try {
+        const r = await fetch(API + '/api/music/spotify/status');
+        const d = await r.json();
+        const el = document.getElementById('spotify-status');
+        if (d.authenticated) {
+          el.innerHTML = '<span class="status ok">Connecte</span>';
+          document.getElementById('spotify-connected').style.display = 'block';
+          document.getElementById('spotify-config').style.display = 'none';
+        } else if (d.configured) {
+          el.innerHTML = '<span class="status pending">Configure mais pas connecte</span> <a href="/api/music/spotify/authorize">Se connecter</a>';
+          document.getElementById('spotify-config').style.display = 'block';
+        } else {
+          el.innerHTML = '<span class="status off">Non configure</span>';
+          document.getElementById('spotify-config').style.display = 'block';
+        }
+      } catch(e) { document.getElementById('spotify-status').textContent = 'Erreur'; }
+
+      // YouTube
+      try {
+        const r = await fetch(API + '/api/music/youtube/status');
+        const d = await r.json();
+        const el = document.getElementById('youtube-status');
+        if (d.hasCookies) {
+          el.innerHTML = '<span class="status ok">Cookies importes</span> — Acces aux playlists perso actif';
+          document.getElementById('yt-disconnect').style.display = 'inline-block';
+        } else {
+          el.innerHTML = '<span class="status pending">Mode public</span> — Recherche et lecture OK, pas de playlists perso';
+        }
+      } catch(e) { document.getElementById('youtube-status').textContent = 'Erreur'; }
+    }
+
+    async function saveSpotifyConfig() {
+      const cid = document.getElementById('sp-client-id').value.trim();
+      const csec = document.getElementById('sp-client-secret').value.trim();
+      if (!cid || !csec) { showMsg('Remplis les deux champs', 'error'); return; }
+      await fetch(API + '/api/music/spotify/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ client_id: cid, client_secret: csec, redirect_uri: redirectUri })
+      });
+      window.location.href = '/api/music/spotify/authorize';
+    }
+
+    async function disconnectSpotify() {
+      await fetch(API + '/api/music/spotify/disconnect', { method: 'POST' });
+      showMsg('Spotify deconnecte', 'success');
+      loadStatus();
+    }
+
+    async function saveYTCookies() {
+      const cookies = document.getElementById('yt-cookies').value.trim();
+      if (!cookies) { showMsg('Colle tes cookies', 'error'); return; }
+      const r = await fetch(API + '/api/music/youtube/cookies', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ cookies })
+      });
+      if (r.ok) {
+        showMsg('Cookies importes !', 'success');
+        loadStatus();
+      } else {
+        showMsg('Erreur', 'error');
+      }
+    }
+
+    async function disconnectYT() {
+      await fetch(API + '/api/music/youtube/disconnect', { method: 'POST' });
+      showMsg('Cookies supprimes', 'success');
+      loadStatus();
+    }
+
+    loadStatus();
+  </script>
+</body>
+</html>`;
+}
+
+
+export function startDashboard(): void {
+  const server = createServer(handleRequest);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[DASHBOARD] Admin panel: http://0.0.0.0:${PORT}`);
+  });
+}

@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diva — Dashboard</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0b0d14;--surface:#131620;--surface2:#1a1e2e;--border:#252a3a;
+      --text:#e4e4e7;--muted:#71717a;--dim:#3f3f46;
+      --accent:#818cf8;--accent2:#6366f1;
+      --green:#4ade80;--red:#f87171;--orange:#fb923c;--blue:#60a5fa;--purple:#a78bfa;--cyan:#22d3ee;
+      --sidebar-w:220px;
+    }
+    body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+
+    /* ===== SIDEBAR ===== */
+    .sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s}
+    .sidebar-header{padding:20px 16px 16px;border-bottom:1px solid var(--border)}
+    .sidebar-header h1{font-size:1.25rem;font-weight:700;display:flex;align-items:center;gap:8px}
+    .sidebar-header h1 .logo{color:var(--accent);font-size:1.4rem}
+    .sidebar-header .version{font-size:.65rem;color:var(--muted);margin-top:2px}
+    .sidebar-nav{flex:1;overflow-y:auto;padding:8px}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:.875rem;font-weight:500;transition:all .15s;border:1px solid transparent;margin-bottom:2px}
+    .nav-item:hover{background:var(--surface2);color:var(--text)}
+    .nav-item.active{background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(129,140,248,.08));color:var(--accent);border-color:rgba(129,140,248,.2)}
+    .nav-icon{font-size:1.1rem;width:22px;text-align:center;flex-shrink:0}
+    .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);font-size:.7rem;color:var(--dim)}
+
+    /* ===== MAIN ===== */
+    .main{flex:1;overflow-y:auto;overflow-x:hidden}
+    .main-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--surface);position:sticky;top:0;z-index:10}
+    .main-header h2{font-size:1.1rem;font-weight:600}
+    .main-header .clock{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+    .content{padding:20px 24px}
+
+    /* ===== TAB PAGES ===== */
+    .tab-page{display:none;animation:fadeIn .2s}
+    .tab-page.active{display:block}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+    /* ===== CARDS ===== */
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px}
+    .grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+    .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .card-title{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+    .card-full{grid-column:1/-1}
+
+    /* ===== STATS ===== */
+    .stat{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)}
+    .stat:last-child{border-bottom:none}
+    .stat-label{color:var(--muted);font-size:.82rem}
+    .stat-value{font-weight:600;font-variant-numeric:tabular-nums;font-size:.85rem}
+
+    /* ===== BADGES ===== */
+    .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:.72rem;font-weight:600}
+    .badge-ok{background:rgba(74,222,128,.12);color:var(--green)}
+    .badge-down{background:rgba(248,113,113,.12);color:var(--red)}
+    .badge-warn{background:rgba(251,146,60,.12);color:var(--orange)}
+    .badge-info{background:rgba(96,165,250,.12);color:var(--blue)}
+
+    /* ===== PROGRESS BAR ===== */
+    .progress{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:4px}
+    .progress-fill{height:100%;border-radius:3px;transition:width .5s}
+
+    /* ===== BUTTONS ===== */
+    button{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:500;transition:all .15s}
+    button:hover{opacity:.88}
+    button:active{transform:scale(.97)}
+    .btn-sm{padding:4px 10px;font-size:.72rem}
+    .btn-green{background:var(--green);color:#000}
+    .btn-red{background:var(--red);color:#000}
+    .btn-orange{background:var(--orange);color:#000}
+    .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
+    .btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+    .btn-group{display:flex;gap:6px;flex-wrap:wrap}
+
+    /* ===== SERVICE ROWS ===== */
+    .svc-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+    .svc-row:last-child{border-bottom:none}
+    .svc-info{display:flex;flex-direction:column;gap:2px}
+    .svc-name{font-weight:600;font-size:.88rem}
+    .svc-meta{font-size:.7rem;color:var(--muted)}
+
+    /* ===== FORMS ===== */
+    input[type=text],input[type=password],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:6px;font-size:.82rem;font-family:inherit;width:100%;transition:border-color .15s}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+    label{font-size:.78rem;color:var(--muted);display:block;margin-bottom:3px}
+    .form-row{margin-bottom:12px}
+    .form-inline{display:flex;gap:8px;align-items:end}
+
+    /* ===== TUNING SLIDERS ===== */
+    .tune-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:12px}
+    .tune-row:last-child{border-bottom:none}
+    .tune-label{flex:1}
+    .tune-desc{font-size:.68rem;color:var(--muted);margin-top:1px}
+    .tune-input{width:90px;text-align:right;padding:4px 8px}
+    input[type=range]{width:120px;accent-color:var(--accent)}
+    .tune-val{font-family:monospace;font-size:.82rem;color:var(--accent);min-width:48px;text-align:right}
+
+    /* ===== TOGGLE ===== */
+    .toggle{width:44px;height:24px;background:var(--border);border-radius:12px;position:relative;cursor:pointer;transition:background .3s;flex-shrink:0}
+    .toggle.on{background:var(--accent)}
+    .toggle::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:2px;left:2px;transition:transform .3s}
+    .toggle.on::after{transform:translateX(20px)}
+
+    /* ===== SPEAKER / MEMORY ITEMS ===== */
+    .item-row{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin:4px 0;border:1px solid var(--border);border-radius:6px}
+    .item-text{flex:1;font-size:.84rem;line-height:1.4}
+    .item-id{font-size:.62rem;color:var(--muted);font-family:monospace;margin-top:2px}
+
+    /* ===== LOGS ===== */
+    .log-container{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.72rem;line-height:1.7;background:#080a10;border-radius:8px;padding:10px;overflow-y:auto;max-height:500px;min-height:300px}
+    .log-line{white-space:pre-wrap;word-break:break-all;padding:1px 0;border-bottom:1px solid rgba(255,255,255,.02)}
+    .log-ts{color:#444}
+    .log-unit{font-weight:600;min-width:100px;display:inline-block}
+    .log-unit-diva-server{color:var(--accent)}
+    .log-unit-diva-audio{color:var(--green)}
+    .log-unit-diva-memory{color:var(--orange)}
+    .log-unit-intent-router{color:var(--blue)}
+    .log-msg{color:#bbb}
+    .log-msg-error{color:var(--red)}
+    .log-msg-warn{color:var(--orange)}
+    .filter-chip{padding:3px 10px;border-radius:12px;font-size:.7rem;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all .15s}
+    .filter-chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .log-badge{display:inline-block;padding:1px 8px;border-radius:3px;font-size:.65rem;margin-left:6px;font-weight:600}
+    .log-badge-live{background:rgba(74,222,128,.15);color:var(--green);animation:pulse 2s infinite}
+    .log-badge-paused{background:rgba(248,113,113,.15);color:var(--red)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+    /* ===== TABLE ===== */
+    table{width:100%;border-collapse:collapse;font-size:.82rem}
+    th{text-align:left;color:var(--muted);padding:8px;border-bottom:2px solid var(--border);font-weight:500;font-size:.75rem}
+    td{padding:8px;border-bottom:1px solid var(--border)}
+
+    /* ===== TOAST ===== */
+    .toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+    .toast{padding:10px 16px;border-radius:8px;font-size:.82rem;font-weight:500;animation:toastIn .3s;max-width:360px;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+    .toast-success{background:#065f46;color:#a7f3d0;border:1px solid #10b981}
+    .toast-error{background:#7f1d1d;color:#fca5a5;border:1px solid #ef4444}
+    .toast-info{background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6}
+    @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+    /* ===== NETWORK ===== */
+    .wifi-net{padding:8px;border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:all .15s;margin-bottom:4px}
+    .wifi-net:hover{border-color:var(--accent);background:var(--surface2)}
+    .wifi-net.connected{border-color:var(--green);background:rgba(74,222,128,.05)}
+
+    /* ===== SECTION ===== */
+    .section{margin-bottom:24px}
+    .section-title{font-size:.9rem;font-weight:600;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+
+    /* ===== ACCORDION ===== */
+    .accordion-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface2);border-radius:8px;cursor:pointer;margin-bottom:4px;transition:all .15s}
+    .accordion-header:hover{background:var(--border)}
+    .accordion-header .arrow{transition:transform .2s;color:var(--muted)}
+    .accordion-header.open .arrow{transform:rotate(90deg)}
+    .accordion-body{padding:12px 16px;display:none}
+    .accordion-body.open{display:block;animation:fadeIn .2s}
+
+    /* ===== SOUND ===== */
+    .sound-play{background:var(--accent);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+    /* ===== RESPONSIVE ===== */
+    @media(max-width:768px){
+      .sidebar{width:60px}
+      .nav-label,.sidebar-header h1 span,.sidebar-footer,.version{display:none}
+      .sidebar-header{padding:12px 8px}
+      .sidebar-header h1{justify-content:center}
+      .nav-item{justify-content:center;padding:10px 8px}
+      .nav-icon{margin:0}
+      .content{padding:12px}
+      .grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-header">
+    <h1><span class="logo">&#9671;</span> <span>Diva</span></h1>
+    <div class="version">v0.2.0 — Rock 5B+</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="nav-icon">&#9673;</span><span class="nav-label">Vue d'ensemble</span>
+    </div>
+    <div class="nav-item" data-tab="services" onclick="switchTab('services')">
+      <span class="nav-icon">&#9881;</span><span class="nav-label">Services</span>
+    </div>
+    <div class="nav-item" data-tab="audio" onclick="switchTab('audio')">
+      <span class="nav-icon">&#9835;</span><span class="nav-label">Audio & Voix</span>
+    </div>
+    <div class="nav-item" data-tab="network" onclick="switchTab('network')">
+      <span class="nav-icon">&#8982;</span><span class="nav-label">Reseau & Comptes</span>
+    </div>
+    <div class="nav-item" data-tab="profiles" onclick="switchTab('profiles')">
+      <span class="nav-icon">&#9823;</span><span class="nav-label">Profils & Vie</span>
+    </div>
+    <div class="nav-item" data-tab="monitoring" onclick="switchTab('monitoring')">
+      <span class="nav-icon">&#9636;</span><span class="nav-label">Monitoring</span>
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <span id="lastUpdate">--</span>
+  </div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+  <div class="main-header">
+    <h2 id="pageTitle">Vue d'ensemble</h2>
+    <div class="clock" id="clock">--:--</div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 1: VUE D'ENSEMBLE -->
+  <!-- ================================================================== -->
+  <div class="content tab-page active" id="tab-overview">
+    <!-- Service health pills -->
+    <div class="card card-full" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Sante des services</span><span class="badge badge-info" id="svcCountBadge">--</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px" id="svcPills"></div>
+    </div>
+
+    <div class="grid">
+      <!-- System metrics -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Systeme</span></div>
+        <div class="stat"><span class="stat-label">CPU Temp</span><span class="stat-value" id="cpuTemp">--</span></div>
+        <div id="cpuTempBar" class="progress"><div class="progress-fill" style="width:0;background:var(--green)"></div></div>
+        <div class="stat"><span class="stat-label">Load (1/5/15m)</span><span class="stat-value" id="cpuLoad">--</span></div>
+        <div class="stat"><span class="stat-label">RAM</span><span class="stat-value" id="ramUsage">--</span></div>
+        <div id="ramBar" class="progress"><div class="progress-fill" style="width:0;background:var(--blue)"></div></div>
+        <div class="stat"><span class="stat-label">Disque</span><span class="stat-value" id="diskUsage">--</span></div>
+        <div class="stat"><span class="stat-label">NPU</span><span class="stat-value" id="npuStatus">--</span></div>
+        <div class="stat"><span class="stat-label">Uptime</span><span class="stat-value" id="uptime">--</span></div>
+      </div>
+
+      <!-- Timers -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Minuteurs</span></div>
+        <div id="timers"><span class="stat-label">Aucun minuteur</span></div>
+      </div>
+
+      <!-- DND -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ne Pas Deranger</span></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="toggle" id="dndToggle" onclick="toggleDND()"></div>
+          <span id="dndLabel" style="font-size:.85rem">Inactif</span>
+        </div>
+      </div>
+
+      <!-- Radio -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Radio</span></div>
+        <div id="radioStatus"><span class="stat-label">--</span></div>
+      </div>
+    </div>
+
+    <!-- Recent interactions compact -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Dernieres interactions</span></div>
+      <table>
+        <thead><tr><th>Heure</th><th>Qui</th><th>Transcription</th><th>Intent</th><th>Latence</th></tr></thead>
+        <tbody id="logsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 2: SERVICES -->
+  <!-- ================================================================== -->
+  <div class="content tab-page" id="tab-services">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">Controle des services</span>
+        <div class="btn-group">
+          <button class="btn-green btn-sm" onclick="startAll()">Tout demarrer</button>
+          <button class="btn-red btn-sm" onclick="stopAll()">Tout arreter</button>
+        </div>
+      </div>
+      <div id="servicesList"></div>
+    </div>
+
+    <!-- Env Config -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Configuration .env</span></div>
+      <p style="font-size:.75rem;color:var(--muted);margin-bottom:12px">Variables non-sensibles. Redemarrage requis apres modification.</p>
+      <div id="envConfig"></div>
+      <button onclick="saveEnvConfig()" style="margin-top:12px">Sauvegarder .env</button>
+    </div>
+
+    <!-- Proactive Config -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Mode proactif</span></div>
+      <div class="form-row">
+        <label>Active</label>
+        <div class="toggle" id="proactiveToggle" onclick="toggleProactive()"></div>
+      </div>
+      <div class="form-row">
+        <label>Heures de compagnonnage (separees par virgule)</label>
+        <input type="text" id="proactiveCompanionship" placeholder="10:00, 16:00">
+      </div>
+      <div class="form-row">
+        <label>Intervalle annonce heure (min)</label>
+        <input type="number" id="proactiveInterval" value="120" min="30" max="480">
+      </div>
+      <div class="form-row">
+        <label>Heure resume quotidien</label>
+        <input type="text" id="proactiveSummary" placeholder="21:00">
+      </div>
+      <button onclick="saveProactiveConfig()">Sauvegarder</button>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 3: AUDIO & VOIX -->
+  <!-- ================================================================== -->
+  <div class="content tab-page" id="tab-audio">
+
+    <!-- ONNX Model Selector -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Modele Wake Word (ONNX)</span></div>
+      <div id="onnxModels"><span class="stat-label">Chargement...</span></div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <label>Uploader un modele .onnx</label>
+        <form id="onnxUploadForm" style="display:flex;gap:8px;margin-top:4px">
+          <input type="file" accept=".onnx" id="onnxFile" style="flex:1">
+          <button type="submit" class="btn-sm">Upload</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Wake Word Tuning -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Reglages Wake Word</span></div>
+      <div class="tune-row">
+        <div class="tune-label">Seuil de detection<div class="tune-desc">Plus bas = plus sensible (0.3-0.95)</div></div>
+        <input type="range" id="t_wakeword_threshold" min="0.3" max="0.95" step="0.05" oninput="V('v_wakeword_threshold',this.value)">
+        <span class="tune-val" id="v_wakeword_threshold">-</span>
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Seuil log score<div class="tune-desc">Affiche dans les logs au-dessus de cette valeur</div></div>
+        <input type="range" id="t_wakeword_log_threshold" min="0.1" max="0.9" step="0.05" oninput="V('v_wakeword_log_threshold',this.value)">
+        <span class="tune-val" id="v_wakeword_log_threshold">-</span>
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Frames drain post-playback<div class="tune-desc">Frames ignorees apres playback (anti-echo). 20=~1.6s</div></div>
+        <input type="number" class="tune-input" id="t_wakeword_drain_frames" min="5" max="50" step="5">
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Delai post-wakeword (s)<div class="tune-desc">Pause apres detection avant ecoute</div></div>
+        <input type="number" class="tune-input" id="t_post_wakeword_delay_s" min="0.1" max="2" step="0.1">
+      </div>
+    </div>
+
+    <!-- VAD Tuning -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Reglages VAD</span></div>
+      <div class="tune-row">
+        <div class="tune-label">Seuil silence fin de parole (s)<div class="tune-desc">Duree silence avant arret. Plus bas = plus rapide</div></div>
+        <input type="range" id="t_vad_silence_timeout_s" min="0.3" max="2.0" step="0.1" oninput="V('v_vad_silence_timeout_s',this.value+'s')">
+        <span class="tune-val" id="v_vad_silence_timeout_s">-</span>
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Duree min parole (ms)<div class="tune-desc">Audio ignore si plus court (anti-bruit)</div></div>
+        <input type="number" class="tune-input" id="t_vad_min_speech_ms" min="100" max="1000" step="50">
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Probabilite parole<div class="tune-desc">Silero VAD seuil (0.2-0.8)</div></div>
+        <input type="range" id="t_vad_speech_prob_threshold" min="0.2" max="0.8" step="0.05" oninput="V('v_vad_speech_prob_threshold',this.value)">
+        <span class="tune-val" id="v_vad_speech_prob_threshold">-</span>
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Attente max sans parole (s)<div class="tune-desc">Timeout si aucune parole apres WW</div></div>
+        <input type="number" class="tune-input" id="t_record_max_wait_s" min="2" max="15" step="1">
+      </div>
+      <div class="tune-row">
+        <div class="tune-label">Delai post-play (s)<div class="tune-desc">Pause apres lecture audio (anti-echo)</div></div>
+        <input type="range" id="t_post_play_delay_s" min="0.1" max="1.0" step="0.05" oninput="V('v_post_play_delay_s',this.value+'s')">
+        <span class="tune-val" id="v_post_play_delay_s">-</span>
+      </div>
+      <button onclick="applyAudioTuning()" style="margin-top:8px">Appliquer reglages audio</button>
+    </div>
+
+    <!-- Speaker ID -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Identification vocale</span></div>
+        <div class="tune-row">
+          <div class="tune-label">Seuil identification<div class="tune-desc">Cosine similarity min (0.1-0.8)</div></div>
+          <input type="range" id="t_identification_threshold" min="0.1" max="0.8" step="0.05" oninput="V('v_identification_threshold',this.value)">
+          <span class="tune-val" id="v_identification_threshold">-</span>
+        </div>
+        <div class="tune-row">
+          <div class="tune-label">Confiance auto-switch<div class="tune-desc">Min pour changer de persona auto</div></div>
+          <input type="range" id="t_auto_switch_confidence" min="0.1" max="0.9" step="0.05" oninput="V('v_auto_switch_confidence',this.value)">
+          <span class="tune-val" id="v_auto_switch_confidence">-</span>
+        </div>
+        <button onclick="applySpeakerTuning()" style="margin-top:8px">Appliquer</button>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Voix enregistrees</span></div>
+        <div id="speakersList"><span class="stat-label">Chargement...</span></div>
+      </div>
+    </div>
+
+    <!-- Sounds -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><span class="card-title">Sons systeme</span></div>
+      <div id="sounds"></div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <form id="uploadForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center">
+          <input type="file" id="soundFile" accept=".wav" style="flex:1">
+          <button type="submit" class="btn-sm">Upload WAV</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 4: RESEAU & COMPTES -->
+  <!-- ================================================================== -->
+  <div class="content tab-page" id="tab-network">
+    <div class="grid">
+      <!-- WiFi -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">WiFi</span>
+          <div class="btn-group">
+            <button class="btn-sm btn-ghost" onclick="scanWifi()">Scanner</button>
+            <button class="btn-sm btn-red" id="wifiDisconnectBtn" onclick="disconnectWifi()" disabled>Deconnecter</button>
+          </div>
+        </div>
+        <div id="wifiStatus" style="margin-bottom:8px"><span class="stat-label">Chargement...</span></div>
+        <div id="wifiNetworks"></div>
+        <div id="wifiConnectForm" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:.85rem;margin-bottom:8px">Connexion a <strong id="wifiConnectSSID"></strong></div>
+          <input type="password" id="wifiPassword" placeholder="Mot de passe WiFi" style="margin-bottom:8px">
+          <div class="btn-group">
+            <button onclick="connectWifi()">Connecter</button>
+            <button class="btn-ghost" onclick="cancelWifiConnect()">Annuler</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bluetooth -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Bluetooth</span>
+          <button class="btn-sm btn-ghost" id="btScanBtn" onclick="scanBluetooth()">Rechercher</button>
+        </div>
+        <div id="btStatus" style="margin-bottom:8px"><span class="stat-label">Chargement...</span></div>
+        <div id="btPairedDevices"></div>
+        <div id="btScanResults"></div>
+      </div>
+    </div>
+
+    <!-- Music Accounts -->
+    <div class="grid" style="margin-top:16px">
+      <!-- Spotify -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Spotify</span></div>
+        <div id="spotifyStatus" style="margin-bottom:12px"><span class="stat-label">Chargement...</span></div>
+        <div id="spotifyConfig" style="display:none">
+          <p style="font-size:.75rem;color:var(--muted);margin-bottom:8px">
+            1. Cree une app sur <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--accent)">developer.spotify.com</a><br>
+            2. Redirect URI: <code id="redirectUri" style="font-size:.7rem;color:var(--cyan)"></code>
+          </p>
+          <div class="form-row"><label>Client ID</label><input type="text" id="spClientId"></div>
+          <div class="form-row"><label>Client Secret</label><input type="password" id="spClientSecret"></div>
+          <button onclick="saveSpotifyConfig()">Connecter Spotify</button>
+        </div>
+        <div id="spotifyConnected" style="display:none">
+          <button class="btn-red" onclick="disconnectSpotify()">Deconnecter</button>
+        </div>
+      </div>
+
+      <!-- YouTube Music -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">YouTube Music</span></div>
+        <div id="youtubeStatus" style="margin-bottom:12px"><span class="stat-label">Chargement...</span></div>
+        <p style="font-size:.75rem;color:var(--muted);margin-bottom:8px">
+          Sans compte: recherche OK. Pour playlists: importe tes cookies.<br>
+          1. Extension <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" style="color:var(--accent)">Get cookies.txt</a><br>
+          2. Exporte depuis <a href="https://music.youtube.com" target="_blank" style="color:var(--accent)">music.youtube.com</a>
+        </p>
+        <textarea id="ytCookies" rows="4" placeholder="# Netscape HTTP Cookie File..."></textarea>
+        <div class="btn-group" style="margin-top:8px">
+          <button onclick="saveYTCookies()">Importer</button>
+          <button class="btn-red" id="ytDisconnectBtn" onclick="disconnectYT()" style="display:none">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 5: PROFILS & VIE -->
+  <!-- ================================================================== -->
+  <div class="content tab-page" id="tab-profiles">
+    <div class="grid">
+      <!-- Personas -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Personas</span></div>
+        <div id="personas"><span class="stat-label">Chargement...</span></div>
+      </div>
+
+      <!-- Shopping -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Liste de courses</span></div>
+        <div id="shoppingList"><span class="stat-label">Chargement...</span></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Medications -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Medicaments</span></div>
+        <div id="medCompliance"><span class="stat-label">Chargement...</span></div>
+      </div>
+
+      <!-- Repetitions -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Questions repetees</span></div>
+        <div id="repetitions"><span class="stat-label">Chargement...</span></div>
+      </div>
+    </div>
+
+    <!-- Routines -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Routines</span></div>
+      <div id="routines"><span class="stat-label">Chargement...</span></div>
+    </div>
+
+    <!-- Memory Manager -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Memoires (Mem0)</span></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <label style="margin:0">Utilisateur:</label>
+        <select id="memoryUserSelect" onchange="loadMemories()" style="width:auto"></select>
+        <button class="btn-sm btn-ghost" onclick="loadMemories()">Rafraichir</button>
+        <span style="font-size:.72rem;color:var(--muted)" id="memoryCount"></span>
+      </div>
+      <div id="memoryList" style="max-height:400px;overflow-y:auto">
+        <div style="color:var(--muted);font-style:italic;text-align:center;padding:20px">Selectionne un utilisateur</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <input type="text" id="memoryAddInput" placeholder="Ajouter une memoire..." style="flex:1">
+        <button class="btn-sm" onclick="addMemoryManual()">Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- TAB 6: MONITORING -->
+  <!-- ================================================================== -->
+  <div class="content tab-page" id="tab-monitoring">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">Logs Live <span class="log-badge log-badge-live" id="streamBadge">LIVE</span></span>
+        <div class="btn-group">
+          <button class="btn-sm btn-ghost" id="pauseBtn" onclick="togglePause()">Pause</button>
+          <button class="btn-sm btn-ghost" onclick="clearLogs()">Clear</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <button class="filter-chip active" data-unit="all" onclick="toggleLogFilter(this)">Tous</button>
+        <button class="filter-chip active" data-unit="diva-server" onclick="toggleLogFilter(this)">diva-server</button>
+        <button class="filter-chip active" data-unit="diva-audio" onclick="toggleLogFilter(this)">diva-audio</button>
+        <button class="filter-chip active" data-unit="diva-memory" onclick="toggleLogFilter(this)">diva-memory</button>
+        <button class="filter-chip active" data-unit="intent-router" onclick="toggleLogFilter(this)">intent-router</button>
+        <input type="text" id="logSearch" placeholder="Filtrer..." oninput="filterLogs()" style="width:160px;padding:4px 8px;font-size:.75rem">
+        <label style="font-size:.72rem;display:flex;align-items:center;gap:4px"><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
+      </div>
+      <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <!-- Interaction logs table -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Historique des interactions</span></div>
+      <table>
+        <thead><tr><th>Heure</th><th>Locuteur</th><th>Transcription</th><th>Intent</th><th>Reponse</th><th>Latence</th></tr></thead>
+        <tbody id="fullLogsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// =====================================================================
+// CORE
+// =====================================================================
+var API = '';
+var currentTab = 'overview';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-page').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  var page = document.getElementById('tab-' + tab);
+  var nav = document.querySelector('.nav-item[data-tab="'+tab+'"]');
+  if (page) page.classList.add('active');
+  if (nav) nav.classList.add('active');
+  var titles = {overview:'Vue d\'ensemble',services:'Services',audio:'Audio & Voix',network:'Reseau & Comptes',profiles:'Profils & Vie',monitoring:'Monitoring'};
+  document.getElementById('pageTitle').textContent = titles[tab] || tab;
+  // Lazy-load data for tab
+  if (tab === 'services') { fetchServiceList(); fetchEnvConfig(); fetchProactiveConfig(); }
+  if (tab === 'audio') { fetchAudioTuning(); fetchSpeakerTuning(); fetchSpeakers(); fetchSounds(); fetchOnnxModels(); }
+  if (tab === 'network') { scanWifi(); fetchBluetoothStatus(); loadMusicStatus(); }
+  if (tab === 'profiles') { fetchPersonas(); fetchHealth(); fetchRoutines(); loadMemoryUsers(); loadMemories(); }
+  if (tab === 'monitoring' && !logEventSource) { initLiveMonitoring(); }
+}
+
+function V(id, val) { document.getElementById(id).textContent = val; }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toast(msg, type) {
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + (type || 'info');
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(function() { el.style.opacity = '0'; setTimeout(function() { el.remove(); }, 300); }, 3500);
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// =====================================================================
+// STATUS / METRICS
+// =====================================================================
+async function fetchStatus() {
+  try {
+    var res = await fetch(API + '/api/status');
+    var data = await res.json();
+    renderPills(data.services);
+    renderMetrics(data.metrics);
+  } catch(e) {}
+}
+
+function renderPills(services) {
+  var el = document.getElementById('svcPills');
+  var ok = 0, total = 0;
+  var html = '';
+  for (var name in services) {
+    total++;
+    var s = services[name];
+    var cls = s.status === 'ok' ? 'badge-ok' : 'badge-down';
+    if (s.status === 'ok') ok++;
+    html += '<span class="badge '+cls+'" style="margin:2px">'+name+' <span style="opacity:.6">'+s.latencyMs+'ms</span></span>';
+  }
+  el.innerHTML = html;
+  document.getElementById('svcCountBadge').textContent = ok + '/' + total + ' OK';
+  document.getElementById('svcCountBadge').className = 'badge ' + (ok === total ? 'badge-ok' : 'badge-warn');
+}
+
+function renderMetrics(m) {
+  if (!m || m.error) return;
+  var tc = m.cpu.tempC;
+  var tColor = tc > 70 ? 'var(--red)' : tc > 55 ? 'var(--orange)' : 'var(--green)';
+  document.getElementById('cpuTemp').innerHTML = '<span style="color:'+tColor+'">'+tc+'C</span>';
+  document.getElementById('cpuTempBar').querySelector('.progress-fill').style.width = Math.min(tc, 100) + '%';
+  document.getElementById('cpuTempBar').querySelector('.progress-fill').style.background = tColor;
+  document.getElementById('cpuLoad').textContent = m.cpu.load1m + ' / ' + m.cpu.load5m + ' / ' + m.cpu.load15m;
+  document.getElementById('ramUsage').textContent = m.memory.usedMB + '/' + m.memory.totalMB + ' MB (' + m.memory.usedPercent + '%)';
+  document.getElementById('ramBar').querySelector('.progress-fill').style.width = m.memory.usedPercent + '%';
+  document.getElementById('diskUsage').textContent = m.disk.used + '/' + m.disk.total + ' (' + m.disk.usedPercent + ')';
+  document.getElementById('npuStatus').innerHTML = m.npu.active ? '<span class="badge badge-ok">Active</span>' : '<span class="badge badge-warn">Idle</span>';
+  document.getElementById('uptime').textContent = m.uptime;
+}
+
+// =====================================================================
+// TIMERS / DND / RADIO / LOGS
+// =====================================================================
+async function fetchTimers() {
+  try {
+    var res = await fetch(API + '/api/timers');
+    var data = await res.json();
+    var el = document.getElementById('timers');
+    if (!data.timers || !data.timers.length) { el.innerHTML = '<span class="stat-label">Aucun minuteur</span>'; return; }
+    el.innerHTML = data.timers.map(function(t) {
+      var m = Math.floor(t.remainingS / 60), s = t.remainingS % 60;
+      return '<div class="stat"><span class="stat-label">'+esc(t.label)+(t.message?' — '+esc(t.message):'')+'</span><span class="stat-value">'+m+'m '+s+'s</span></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function fetchDND() {
+  try {
+    var res = await fetch(API + '/api/dnd');
+    var data = await res.json();
+    var toggle = document.getElementById('dndToggle');
+    var label = document.getElementById('dndLabel');
+    if (data.active) { toggle.classList.add('on'); label.textContent = 'Actif (' + data.remainingMin + ' min)'; }
+    else { toggle.classList.remove('on'); label.textContent = 'Inactif'; }
+  } catch(e) {}
+}
+
+async function toggleDND() {
+  var isOn = document.getElementById('dndToggle').classList.contains('on');
+  await fetch(API + '/api/dnd', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enable:!isOn, durationMin:480}) });
+  fetchDND();
+}
+
+async function fetchRadio() {
+  try {
+    var res = await fetch(API + '/api/radio');
+    var data = await res.json();
+    document.getElementById('radioStatus').innerHTML = data.playing
+      ? '<div class="stat"><span class="stat-label">En cours</span><span class="stat-value"><span class="badge badge-ok">'+esc(data.station)+'</span></span></div>'
+      : '<span class="stat-label">Aucune radio</span>';
+  } catch(e) {}
+}
+
+async function fetchInteractionLogs() {
+  try {
+    var res = await fetch(API + '/api/logs?limit=20');
+    var data = await res.json();
+    var tbody = document.getElementById('logsBody');
+    tbody.innerHTML = data.logs.reverse().slice(0, 10).map(function(l) {
+      var t = new Date(l.timestamp).toLocaleTimeString('fr-FR');
+      return '<tr><td class="log-ts">'+t+'</td><td>'+esc(l.speaker||'-')+'</td><td>'+esc((l.transcription||'').substring(0,60))+'</td><td><span class="badge '+(l.intent==='local'?'badge-ok':'badge-info')+'">'+esc(l.category)+'</span></td><td class="log-ts">'+esc(l.latencyMs||'-')+'ms</td></tr>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function fetchFullLogs() {
+  try {
+    var res = await fetch(API + '/api/logs?limit=50');
+    var data = await res.json();
+    var tbody = document.getElementById('fullLogsBody');
+    tbody.innerHTML = data.logs.reverse().map(function(l) {
+      var t = new Date(l.timestamp).toLocaleTimeString('fr-FR');
+      var resp = (l.response||'').substring(0,80) + ((l.response||'').length > 80 ? '...' : '');
+      return '<tr><td class="log-ts">'+t+'</td><td>'+esc(l.speaker||'-')+'</td><td>'+esc(l.transcription||'-')+'</td><td><span class="badge '+(l.intent==='local'?'badge-ok':'badge-info')+'">'+esc(l.category)+'</span></td><td>'+esc(resp)+'</td><td class="log-ts">'+(l.latencyMs||'-')+'ms</td></tr>';
+    }).join('');
+  } catch(e) {}
+}
+
+// =====================================================================
+// SERVICES
+// =====================================================================
+async function fetchServiceList() {
+  try {
+    var res = await fetch(API + '/api/services/list');
+    var data = await res.json();
+    var el = document.getElementById('servicesList');
+    el.innerHTML = Object.entries(data.services).map(function(e) {
+      var name = e[0], info = e[1];
+      var cls = info.active === 'active' ? 'badge-ok' : 'badge-down';
+      var mem = info.memory !== '-' && info.memory !== '[not set]' ? (parseInt(info.memory)/1048576).toFixed(1)+' MB' : '-';
+      return '<div class="svc-row"><div class="svc-info"><div class="svc-name">'+name+' <span class="badge '+cls+'">'+info.active+'</span></div><div class="svc-meta">PID: '+info.pid+' | RAM: '+mem+' | Uptime: '+info.uptime+'</div></div><div class="btn-group"><button class="btn-sm btn-green" onclick="svcAction(\''+name+'\',\'start\')">Start</button><button class="btn-sm btn-red" onclick="svcAction(\''+name+'\',\'stop\')">Stop</button><button class="btn-sm btn-orange" onclick="svcAction(\''+name+'\',\'restart\')">Restart</button></div></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function svcAction(service, action) {
+  try {
+    await fetch(API + '/api/services/action', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({service:service,action:action}) });
+    toast(service + ': ' + action, 'success');
+    setTimeout(fetchServiceList, 1500);
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+async function stopAll() {
+  if (!confirm('Arreter tous les services Diva ?')) return;
+  await fetch(API + '/api/services/kill-all', { method: 'POST' });
+  toast('Tous les services arretes', 'info');
+  setTimeout(fetchServiceList, 2000);
+}
+
+async function startAll() {
+  await fetch(API + '/api/services/start-all', { method: 'POST' });
+  toast('Demarrage de tous les services...', 'success');
+  setTimeout(fetchServiceList, 3000);
+}
+
+// =====================================================================
+// ENV CONFIG
+// =====================================================================
+async function fetchEnvConfig() {
+  try {
+    var res = await fetch(API + '/api/config/env');
+    var data = await res.json();
+    var el = document.getElementById('envConfig');
+    el.innerHTML = Object.entries(data.config).map(function(e) {
+      return '<div class="form-row"><label>'+esc(e[0])+'</label><input type="text" data-env-key="'+esc(e[0])+'" value="'+esc(e[1])+'"></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function saveEnvConfig() {
+  var updates = {};
+  document.querySelectorAll('[data-env-key]').forEach(function(el) {
+    updates[el.getAttribute('data-env-key')] = el.value;
+  });
+  try {
+    var res = await fetch(API + '/api/config/env', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
+    var data = await res.json();
+    toast('Config sauvee: ' + (data.updated||[]).join(', ') + '. Redemarrage requis.', 'success');
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+// =====================================================================
+// PROACTIVE CONFIG
+// =====================================================================
+async function fetchProactiveConfig() {
+  try {
+    var res = await fetch(API + '/api/config/proactive');
+    var data = await res.json();
+    var toggle = document.getElementById('proactiveToggle');
+    if (data.enabled) toggle.classList.add('on'); else toggle.classList.remove('on');
+    document.getElementById('proactiveCompanionship').value = (data.companionshipTimes || []).join(', ');
+    document.getElementById('proactiveInterval').value = data.timeAnnouncementInterval || 120;
+    document.getElementById('proactiveSummary').value = data.dailySummaryTime || '21:00';
+  } catch(e) {}
+}
+
+function toggleProactive() {
+  document.getElementById('proactiveToggle').classList.toggle('on');
+}
+
+async function saveProactiveConfig() {
+  var config = {
+    enabled: document.getElementById('proactiveToggle').classList.contains('on'),
+    companionshipTimes: document.getElementById('proactiveCompanionship').value.split(',').map(function(s){return s.trim()}).filter(Boolean),
+    timeAnnouncementInterval: parseInt(document.getElementById('proactiveInterval').value) || 120,
+    dailySummaryTime: document.getElementById('proactiveSummary').value || '21:00'
+  };
+  try {
+    await fetch(API + '/api/config/proactive', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(config) });
+    toast('Config proactive sauvee', 'success');
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+// =====================================================================
+// ONNX MODELS
+// =====================================================================
+async function fetchOnnxModels() {
+  try {
+    var res = await fetch(API + '/api/models/wakeword');
+    var data = await res.json();
+    var el = document.getElementById('onnxModels');
+    if (!data.models || !data.models.length) { el.innerHTML = '<span class="stat-label">Aucun modele trouve</span>'; return; }
+    el.innerHTML = data.models.map(function(m) {
+      return '<div class="item-row" style="'+(m.active?'border-color:var(--green);background:rgba(74,222,128,.04)':'')+'">' +
+        '<div><div style="font-weight:600;font-size:.88rem">'+esc(m.name)+' '+(m.active?'<span class="badge badge-ok">actif</span>':'')+'</div><div class="item-id">'+esc(m.path)+' — '+m.size+'</div></div>' +
+        (m.active ? '' : '<button class="btn-sm" onclick="switchModel(\''+esc(m.path).replace(/'/g,"\\'")+'\')">Activer</button>') +
+      '</div>';
+    }).join('');
+  } catch(e) { document.getElementById('onnxModels').innerHTML = '<span class="stat-label">Erreur chargement</span>'; }
+}
+
+async function switchModel(path) {
+  try {
+    var res = await fetch(API + '/api/models/wakeword', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path:path}) });
+    var data = await res.json();
+    toast('Modele change: ' + (data.status||'ok'), 'success');
+    setTimeout(fetchOnnxModels, 2000);
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+document.getElementById('onnxUploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var file = document.getElementById('onnxFile').files[0];
+  if (!file) return;
+  var form = new FormData();
+  form.append('file', file);
+  await fetch(API + '/api/models/wakeword/upload', { method:'POST', body:form });
+  toast('Modele uploade: ' + file.name, 'success');
+  document.getElementById('onnxFile').value = '';
+  fetchOnnxModels();
+});
+
+// =====================================================================
+// AUDIO TUNING
+// =====================================================================
+async function fetchAudioTuning() {
+  try {
+    var res = await fetch(API + '/api/tuning/audio');
+    var data = await res.json();
+    for (var key in data) {
+      var el = document.getElementById('t_' + key);
+      if (el) { el.value = data[key]; var v = document.getElementById('v_' + key); if (v) { v.textContent = key.includes('_s') && !key.includes('ms') ? data[key]+'s' : data[key]; } }
+    }
+  } catch(e) {}
+}
+
+async function applyAudioTuning() {
+  var params = {}, fields = ['wakeword_threshold','wakeword_log_threshold','wakeword_drain_frames','post_wakeword_delay_s','vad_silence_timeout_s','vad_min_speech_ms','vad_speech_prob_threshold','record_max_wait_s','post_play_delay_s'];
+  fields.forEach(function(f) { var el = document.getElementById('t_'+f); if (el) params[f] = parseFloat(el.value); });
+  try {
+    var res = await fetch(API + '/api/tuning/audio', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) });
+    var data = await res.json();
+    toast('Reglages audio appliques' + (data.updated ? ': ' + data.updated.join(', ') : ''), 'success');
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+// =====================================================================
+// SPEAKER TUNING
+// =====================================================================
+async function fetchSpeakerTuning() {
+  try {
+    var res = await fetch(API + '/api/tuning/speaker');
+    var data = await res.json();
+    for (var key in data) {
+      var el = document.getElementById('t_' + key);
+      if (el) { el.value = data[key]; var v = document.getElementById('v_' + key); if (v) v.textContent = data[key]; }
+    }
+  } catch(e) {}
+}
+
+async function applySpeakerTuning() {
+  var params = {};
+  ['identification_threshold','auto_switch_confidence'].forEach(function(f) {
+    var el = document.getElementById('t_'+f); if (el) params[f] = parseFloat(el.value);
+  });
+  try {
+    await fetch(API + '/api/tuning/speaker', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) });
+    toast('Reglages speaker appliques', 'success');
+  } catch(e) { toast('Erreur: ' + e, 'error'); }
+}
+
+async function fetchSpeakers() {
+  try {
+    var res = await fetch(API + '/api/speakers');
+    var data = await res.json();
+    var el = document.getElementById('speakersList');
+    if (!data.speakers || !Object.keys(data.speakers).length) { el.innerHTML = '<span class="stat-label">Aucune voix</span>'; return; }
+    el.innerHTML = Object.keys(data.speakers).map(function(name) {
+      return '<div class="item-row"><span style="font-weight:600">'+esc(name)+'</span><button class="btn-sm btn-red" onclick="deleteSpeaker(\''+esc(name).replace(/'/g,"\\'")+'\')">Supprimer</button></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function deleteSpeaker(name) {
+  if (!confirm('Supprimer la voix de ' + name + ' ?')) return;
+  await fetch(API + '/api/speakers/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name}) });
+  toast('Voix supprimee: ' + name, 'success');
+  fetchSpeakers();
+}
+
+// =====================================================================
+// SOUNDS
+// =====================================================================
+async function fetchSounds() {
+  try {
+    var res = await fetch(API + '/api/sounds');
+    var data = await res.json();
+    var el = document.getElementById('sounds');
+    el.innerHTML = Object.entries(data.sounds).map(function(e) {
+      var slot = e[0], info = e[1];
+      return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)"><button class="sound-play" onclick="playSound(\''+info.currentFile+'\')">&#9654;</button><div style="flex:1"><div style="font-size:.85rem">'+esc(info.description)+'</div><div style="font-size:.7rem;color:var(--muted)">'+slot+'</div></div><div style="font-family:monospace;font-size:.78rem;color:var(--blue)">'+info.currentFile+'</div></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+var currentAudio = null;
+function playSound(f) {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  currentAudio = new Audio(API + '/api/sounds/play/' + encodeURIComponent(f));
+  currentAudio.play().catch(function(e) { toast('Erreur lecture: '+e.message, 'error'); });
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var file = document.getElementById('soundFile').files[0];
+  if (!file) return;
+  var form = new FormData();
+  form.append('file', file);
+  await fetch(API + '/api/sounds/upload', { method:'POST', body:form });
+  toast('Son uploade: ' + file.name, 'success');
+  document.getElementById('soundFile').value = '';
+  fetchSounds();
+});
+
+// =====================================================================
+// PERSONAS / HEALTH / ROUTINES
+// =====================================================================
+async function fetchPersonas() {
+  try {
+    var res = await fetch(API + '/api/personas');
+    var data = await res.json();
+    var el = document.getElementById('personas');
+    if (!data.personas || !data.personas.length) { el.innerHTML = '<span class="stat-label">Aucune persona</span>'; return; }
+    el.innerHTML = data.personas.map(function(p) {
+      return '<div class="stat"><span class="stat-label">'+esc(p.name)+' ('+esc(p.type)+')</span><span class="stat-value">'+esc(p.greetingName||p.id)+'</span></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function fetchHealth() {
+  try {
+    var [medRes,repRes,shopRes] = await Promise.all([fetch(API+'/api/health/medications'),fetch(API+'/api/health/repetitions'),fetch(API+'/api/shopping')]);
+    var med = await medRes.json(), rep = await repRes.json(), shop = await shopRes.json();
+    document.getElementById('medCompliance').innerHTML = '<div class="stat"><span class="stat-label">Compliance 7j</span><span class="stat-value">'+med.compliance+'%</span></div><div class="stat"><span class="stat-label">Prises</span><span class="stat-value">'+(med.log?.length||0)+'</span></div>';
+    document.getElementById('repetitions').innerHTML = '<div class="stat"><span class="stat-label">Repetitions 7j</span><span class="stat-value">'+(rep.totalRepetitions||0)+'</span></div><div class="stat"><span class="stat-label">Questions uniques</span><span class="stat-value">'+(rep.uniqueQuestions||0)+'</span></div>';
+    var items = shop.items || [];
+    document.getElementById('shoppingList').innerHTML = items.length === 0 ? '<span class="stat-label">Liste vide</span>' : items.map(function(i){return '<div class="stat"><span class="stat-label">'+esc(i.name)+'</span><span class="stat-value" style="font-size:.72rem;color:var(--muted)">'+esc(i.addedBy)+'</span></div>';}).join('');
+  } catch(e) {}
+}
+
+async function fetchRoutines() {
+  try {
+    var res = await fetch(API + '/api/routines');
+    var data = await res.json();
+    var el = document.getElementById('routines');
+    if (!data.routines || !data.routines.length) { el.innerHTML = '<span class="stat-label">Aucune routine</span>'; return; }
+    el.innerHTML = data.routines.map(function(r) {
+      return '<div class="stat"><span class="stat-label">'+esc(r.name)+' — '+esc(r.description)+'</span><span class="stat-value">'+r.actions.length+' actions</span></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+// =====================================================================
+// MEMORY
+// =====================================================================
+async function loadMemoryUsers() {
+  try {
+    var res = await fetch(API + '/api/memory/users');
+    var data = await res.json();
+    var sel = document.getElementById('memoryUserSelect');
+    var cur = sel.value;
+    sel.innerHTML = '';
+    (data.users||['default']).forEach(function(u) {
+      var opt = document.createElement('option'); opt.value = u; opt.textContent = u;
+      if (u === cur) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function loadMemories() {
+  var userId = document.getElementById('memoryUserSelect').value;
+  var listEl = document.getElementById('memoryList');
+  var countEl = document.getElementById('memoryCount');
+  listEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:16px">Chargement...</div>';
+  try {
+    var res = await fetch(API + '/api/memory/list?user_id=' + encodeURIComponent(userId));
+    var data = await res.json();
+    var mems = data.memories || [];
+    countEl.textContent = mems.length + ' memoire(s)';
+    if (!mems.length) { listEl.innerHTML = '<div style="color:var(--muted);font-style:italic;text-align:center;padding:20px">Aucune memoire pour '+esc(userId)+'</div>'; return; }
+    listEl.innerHTML = mems.map(function(m) {
+      return '<div class="item-row"><div><div class="item-text">'+esc(m.memory||'(vide)')+'</div><div class="item-id">'+esc(m.id||'-')+'</div></div><button class="btn-sm btn-red" onclick="deleteMemory(\''+esc(m.id||'').replace(/'/g,"\\'")+'\')">X</button></div>';
+    }).join('');
+  } catch(e) { listEl.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px">Erreur</div>'; }
+}
+
+async function deleteMemory(id) {
+  if (!id || !confirm('Supprimer cette memoire ?')) return;
+  await fetch(API + '/api/memory/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({memory_id:id}) });
+  toast('Memoire supprimee', 'success');
+  loadMemories();
+}
+
+async function addMemoryManual() {
+  var input = document.getElementById('memoryAddInput');
+  var text = input.value.trim();
+  if (!text) return;
+  var userId = document.getElementById('memoryUserSelect').value;
+  await fetch(API + '/api/memory/add', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:userId, text:text}) });
+  input.value = '';
+  toast('Memoire ajoutee', 'success');
+  setTimeout(loadMemories, 1000);
+}
+
+// =====================================================================
+// NETWORK — WIFI
+// =====================================================================
+var pendingWifiSSID = '';
+
+async function scanWifi() {
+  document.getElementById('wifiNetworks').innerHTML = '<span class="stat-label">Scan...</span>';
+  try {
+    var res = await fetch(API + '/api/network/wifi/status');
+    var data = await res.json();
+    renderWifiStatus(data);
+  } catch(e) { document.getElementById('wifiNetworks').innerHTML = '<span style="color:var(--red)">Erreur</span>'; }
+}
+
+function renderWifiStatus(data) {
+  var sEl = document.getElementById('wifiStatus');
+  var dBtn = document.getElementById('wifiDisconnectBtn');
+  if (data.connected) {
+    sEl.innerHTML = '<div class="stat"><span class="stat-label">Connecte</span><span class="stat-value"><span class="badge badge-ok">'+esc(data.ssid)+'</span></span></div>'+(data.ip?'<div class="stat"><span class="stat-label">IP</span><span class="stat-value">'+esc(data.ip)+'</span></div>':'');
+    dBtn.disabled = false;
+  } else {
+    sEl.innerHTML = '<div class="stat"><span class="stat-label">Etat</span><span class="stat-value"><span class="badge badge-down">Deconnecte</span></span></div>';
+    dBtn.disabled = true;
+  }
+  var nEl = document.getElementById('wifiNetworks');
+  if (!data.networks || !data.networks.length) { nEl.innerHTML = '<span class="stat-label">Aucun reseau</span>'; return; }
+  var seen = new Set();
+  var unique = data.networks.filter(function(n){if(seen.has(n.ssid)||!n.ssid)return false;seen.add(n.ssid);return true;}).sort(function(a,b){return b.signal-a.signal;});
+  nEl.innerHTML = unique.map(function(n) {
+    var bars = n.signal > 75 ? '||||' : n.signal > 50 ? '|||' : n.signal > 25 ? '||' : '|';
+    var lock = n.security && n.security !== '--' ? ' *' : '';
+    return '<div class="wifi-net'+(n.active?' connected':'')+'" '+(n.active?'':'onclick="showWifiConnect(\''+esc(n.ssid).replace(/'/g,"\\'")+'\')"')+'><div style="display:flex;justify-content:space-between"><span>'+esc(n.ssid)+lock+(n.active?' <span class="badge badge-ok">connecte</span>':'')+'</span><span style="font-size:.75rem;color:var(--muted)">'+bars+' '+n.signal+'%</span></div></div>';
+  }).join('');
+}
+
+function showWifiConnect(ssid) { pendingWifiSSID=ssid;document.getElementById('wifiConnectSSID').textContent=ssid;document.getElementById('wifiPassword').value='';document.getElementById('wifiConnectForm').style.display='block';document.getElementById('wifiPassword').focus(); }
+function cancelWifiConnect() { document.getElementById('wifiConnectForm').style.display='none';pendingWifiSSID=''; }
+
+async function connectWifi() {
+  if (!pendingWifiSSID) return;
+  var pw = document.getElementById('wifiPassword').value;
+  cancelWifiConnect();
+  try {
+    var res = await fetch(API+'/api/network/wifi/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:pendingWifiSSID,password:pw})});
+    if (res.ok) { toast('Connecte a '+pendingWifiSSID, 'success'); setTimeout(scanWifi, 1000); }
+    else { var d = await res.json(); toast('Echec: '+(d.error||'erreur'), 'error'); }
+  } catch(e) { toast('Erreur: '+e, 'error'); }
+}
+
+async function disconnectWifi() {
+  await fetch(API+'/api/network/wifi/disconnect',{method:'POST'});
+  toast('WiFi deconnecte', 'info');
+  setTimeout(scanWifi, 1000);
+}
+
+// =====================================================================
+// NETWORK — BLUETOOTH
+// =====================================================================
+async function fetchBluetoothStatus() {
+  try {
+    var res = await fetch(API + '/api/network/bluetooth/status');
+    var data = await res.json();
+    document.getElementById('btStatus').innerHTML = '<div class="stat"><span class="stat-label">Etat</span><span class="stat-value"><span class="badge '+(data.powered?'badge-ok':'badge-down')+'">'+(data.powered?'Actif':'Eteint')+'</span></span></div>';
+    var pEl = document.getElementById('btPairedDevices');
+    if (!data.devices||!data.devices.length) { pEl.innerHTML = '<span class="stat-label">Aucun appareil</span>'; return; }
+    pEl.innerHTML = data.devices.map(function(d) {
+      return '<div class="item-row"><span>'+esc(d.name)+' <span class="badge '+(d.connected?'badge-ok':'badge-down')+'">'+(d.connected?'connecte':'off')+'</span></span><div class="btn-group">'+(d.connected?'<button class="btn-sm btn-ghost" onclick="btDisconnect(\''+d.mac+'\')">Deconnecter</button>':'<button class="btn-sm btn-ghost" onclick="btConnect(\''+d.mac+'\')">Connecter</button>')+'<button class="btn-sm btn-red" onclick="btRemove(\''+d.mac+'\',\''+esc(d.name).replace(/'/g,"\\'")+'\')">X</button></div></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function scanBluetooth() {
+  var btn=document.getElementById('btScanBtn'); btn.disabled=true; btn.textContent='Scan...';
+  document.getElementById('btScanResults').innerHTML='<span class="stat-label">Recherche (5s)...</span>';
+  try {
+    var res = await fetch(API+'/api/network/bluetooth/scan',{method:'POST'});
+    var data = await res.json();
+    var unpaired = (data.devices||[]).filter(function(d){return !d.paired && d.name && !d.name.match(/^[0-9A-F]{2}[:-]/i);});
+    document.getElementById('btScanResults').innerHTML = !unpaired.length ? '<span class="stat-label">Aucun nouvel appareil</span>' : unpaired.map(function(d){return '<div class="item-row"><span>'+esc(d.name)+' <span style="font-size:.65rem;color:var(--muted)">'+d.mac+'</span></span><button class="btn-sm" onclick="btPair(\''+d.mac+'\')">Appairer</button></div>';}).join('');
+  } catch(e) { document.getElementById('btScanResults').innerHTML='<span style="color:var(--red)">Erreur</span>'; }
+  btn.disabled=false; btn.textContent='Rechercher';
+}
+
+async function btPair(mac) { await fetch(API+'/api/network/bluetooth/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})}); toast('Appaire','success'); fetchBluetoothStatus(); document.getElementById('btScanResults').innerHTML=''; }
+async function btConnect(mac) { await fetch(API+'/api/network/bluetooth/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})}); toast('Connecte','success'); setTimeout(fetchBluetoothStatus,1000); }
+async function btDisconnect(mac) { await fetch(API+'/api/network/bluetooth/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})}); setTimeout(fetchBluetoothStatus,1000); }
+async function btRemove(mac,name) { if(!confirm('Supprimer '+name+' ?'))return; await fetch(API+'/api/network/bluetooth/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})}); toast('Supprime','success'); fetchBluetoothStatus(); }
+
+// =====================================================================
+// MUSIC ACCOUNTS
+// =====================================================================
+async function loadMusicStatus() {
+  try {
+    var r = await fetch(API + '/api/music/spotify/status');
+    var d = await r.json();
+    if (d.authenticated) {
+      document.getElementById('spotifyStatus').innerHTML = '<span class="badge badge-ok">Connecte</span>';
+      document.getElementById('spotifyConnected').style.display = 'block';
+      document.getElementById('spotifyConfig').style.display = 'none';
+    } else if (d.configured) {
+      document.getElementById('spotifyStatus').innerHTML = '<span class="badge badge-warn">Configure</span> <a href="/api/music/spotify/authorize" style="color:var(--accent);font-size:.82rem">Se connecter</a>';
+      document.getElementById('spotifyConfig').style.display = 'block';
+    } else {
+      document.getElementById('spotifyStatus').innerHTML = '<span class="badge badge-down">Non configure</span>';
+      document.getElementById('spotifyConfig').style.display = 'block';
+    }
+    document.getElementById('redirectUri').textContent = window.location.origin + '/api/music/spotify/callback';
+  } catch(e) {}
+  try {
+    var r2 = await fetch(API + '/api/music/youtube/status');
+    var d2 = await r2.json();
+    document.getElementById('youtubeStatus').innerHTML = d2.hasCookies ? '<span class="badge badge-ok">Cookies importes</span>' : '<span class="badge badge-warn">Mode public</span>';
+    document.getElementById('ytDisconnectBtn').style.display = d2.hasCookies ? 'inline-block' : 'none';
+  } catch(e) {}
+}
+
+async function saveSpotifyConfig() {
+  var cid = document.getElementById('spClientId').value.trim();
+  var csec = document.getElementById('spClientSecret').value.trim();
+  if (!cid || !csec) { toast('Remplis les deux champs', 'error'); return; }
+  await fetch(API + '/api/music/spotify/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({client_id:cid,client_secret:csec,redirect_uri:window.location.origin+'/api/music/spotify/callback'}) });
+  window.location.href = '/api/music/spotify/authorize';
+}
+async function disconnectSpotify() { await fetch(API+'/api/music/spotify/disconnect',{method:'POST'}); toast('Spotify deconnecte','info'); loadMusicStatus(); }
+async function saveYTCookies() {
+  var c = document.getElementById('ytCookies').value.trim();
+  if (!c) { toast('Colle tes cookies', 'error'); return; }
+  var r = await fetch(API+'/api/music/youtube/cookies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cookies:c})});
+  if (r.ok) { toast('Cookies importes','success'); loadMusicStatus(); } else toast('Erreur','error');
+}
+async function disconnectYT() { await fetch(API+'/api/music/youtube/disconnect',{method:'POST'}); toast('Cookies supprimes','info'); loadMusicStatus(); }
+
+// =====================================================================
+// LIVE MONITORING
+// =====================================================================
+var logEntries = [], maxLogEntries = 500, logPaused = false, logEventSource = null;
+var activeFilters = new Set(['all','diva-server','diva-audio','diva-memory','intent-router']);
+
+function initLiveMonitoring() {
+  fetch(API + '/api/logs/journalctl?lines=80').then(function(r){return r.json();}).then(function(data) {
+    if (data.entries) data.entries.forEach(function(e){addLogEntry(e);});
+    scrollLogBottom();
+    connectSSE();
+  }).catch(function(){connectSSE();});
+}
+
+function connectSSE() {
+  if (logEventSource) logEventSource.close();
+  logEventSource = new EventSource(API + '/api/logs/stream?services=diva-server,diva-audio,diva-memory,intent-router');
+  logEventSource.onmessage = function(ev) { if (logPaused) return; try { var e = JSON.parse(ev.data); if (e.msg) addLogEntry(e); } catch(x){} };
+  logEventSource.onerror = function() { document.getElementById('streamBadge').className='log-badge log-badge-paused'; document.getElementById('streamBadge').textContent='RECONNECTING'; setTimeout(connectSSE,3000); };
+  logEventSource.onopen = function() { document.getElementById('streamBadge').className='log-badge log-badge-live'; document.getElementById('streamBadge').textContent='LIVE'; };
+}
+
+function addLogEntry(entry) {
+  logEntries.push(entry);
+  if (logEntries.length > maxLogEntries) logEntries.shift();
+  renderLogEntry(entry);
+}
+
+function renderLogEntry(entry) {
+  var c = document.getElementById('logContainer');
+  var unit = (entry.unit||'').replace('.service','');
+  if (!activeFilters.has('all') && !activeFilters.has(unit)) return;
+  var search = document.getElementById('logSearch').value.toLowerCase();
+  if (search && !(entry.msg||'').toLowerCase().includes(search) && !unit.toLowerCase().includes(search)) return;
+  var div = document.createElement('div');
+  div.className = 'log-line';
+  div.setAttribute('data-unit', unit);
+  var ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '--:--:--';
+  var msgCls = 'log-msg';
+  var msg = entry.msg || '';
+  if (msg.match(/error|Error|ERROR|failed|Failed/i)) msgCls += ' log-msg-error';
+  else if (msg.match(/warn|WARN|Warning/i)) msgCls += ' log-msg-warn';
+  div.innerHTML = '<span class="log-ts">'+ts+'</span> <span class="log-unit log-unit-'+unit+'">'+unit.padEnd(14)+'</span> <span class="'+msgCls+'">'+esc(msg)+'</span>';
+  c.appendChild(div);
+  while (c.children.length > maxLogEntries) c.removeChild(c.firstChild);
+  if (document.getElementById('autoScroll').checked) scrollLogBottom();
+}
+
+function scrollLogBottom() { var c = document.getElementById('logContainer'); c.scrollTop = c.scrollHeight; }
+function togglePause() {
+  logPaused = !logPaused;
+  document.getElementById('pauseBtn').textContent = logPaused ? 'Resume' : 'Pause';
+  document.getElementById('streamBadge').className = 'log-badge ' + (logPaused ? 'log-badge-paused' : 'log-badge-live');
+  document.getElementById('streamBadge').textContent = logPaused ? 'PAUSED' : 'LIVE';
+}
+function clearLogs() { logEntries = []; document.getElementById('logContainer').innerHTML = ''; }
+function toggleLogFilter(el) {
+  var unit = el.getAttribute('data-unit');
+  if (unit === 'all') {
+    var allOn = el.classList.contains('active');
+    document.querySelectorAll('.filter-chip').forEach(function(c){if(allOn)c.classList.remove('active');else c.classList.add('active');});
+    if (allOn) activeFilters.clear(); else { activeFilters.clear(); ['all','diva-server','diva-audio','diva-memory','intent-router'].forEach(function(u){activeFilters.add(u);}); }
+  } else {
+    el.classList.toggle('active');
+    if (el.classList.contains('active')) activeFilters.add(unit); else activeFilters.delete(unit);
+    var allChip = document.querySelector('.filter-chip[data-unit="all"]');
+    if (activeFilters.size >= 4) allChip.classList.add('active'); else allChip.classList.remove('active');
+  }
+  rerenderLogs();
+}
+function filterLogs() { rerenderLogs(); }
+function rerenderLogs() { document.getElementById('logContainer').innerHTML=''; logEntries.forEach(function(e){renderLogEntry(e);}); scrollLogBottom(); }
+
+// =====================================================================
+// INIT + AUTO-REFRESH
+// =====================================================================
+function refreshOverview() {
+  fetchStatus();
+  fetchTimers();
+  fetchDND();
+  fetchRadio();
+  fetchInteractionLogs();
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+
+refreshOverview();
+setInterval(refreshOverview, 5000);
+setInterval(function() { if (currentTab === 'services') fetchServiceList(); }, 10000);
+setInterval(function() { if (currentTab === 'monitoring') fetchFullLogs(); }, 8000);
+setInterval(function() { if (currentTab === 'network') { scanWifi(); fetchBluetoothStatus(); } }, 30000);
+</script>
+</body>
+</html>

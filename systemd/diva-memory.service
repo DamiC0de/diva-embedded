@@ -1,0 +1,16 @@
+[Unit]
+Description=Diva Memory & Speaker ID Service (Mem0 + WeSpeaker)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/diva-embedded
+ExecStart=/usr/bin/python3 python/memory-service.py
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/opt/diva-embedded/.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

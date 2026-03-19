@@ -1,0 +1,51 @@
+node_modules/
+# dist/ — tracked for proto (live-patched JS)
+.env
+*.env.local
+# Data — ignore user data, keep config templates
+data/memory/
+data/mem0_db/
+data/speakers/
+data/memory.db
+data/medication-log.json
+data/repetition-log.json
+data/shopping-list.json
+data/timers.json
+data/wellness-log.json
+data/speaker-tuning.json
+data/tuning.json
+memory/*.md
+# Data — ignore user data, keep config templates
+data/memory/
+data/mem0_db/
+data/speakers/
+data/memory.db
+data/medication-log.json
+data/repetition-log.json
+data/shopping-list.json
+data/timers.json
+data/wellness-log.json
+data/speaker-tuning.json
+data/tuning.json
+memory/conversations/
+*.raw
+*.wav
+/tmp/
+.DS_Store
+*.backup
+*.before_speaker
+python/temp_header.py
+# Data — ignore user data, keep config templates
+data/memory/
+data/mem0_db/
+data/speakers/
+data/memory.db
+data/medication-log.json
+data/repetition-log.json
+data/shopping-list.json
+data/timers.json
+data/wellness-log.json
+data/speaker-tuning.json
+data/tuning.json
+
+data/music/ytmusic-cookies.txt

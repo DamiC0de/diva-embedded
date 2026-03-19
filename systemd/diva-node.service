@@ -1,0 +1,15 @@
+[Unit]
+Description=Diva PROTO — Node.js API server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/diva-embedded
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/diva-embedded/.env
+
+[Install]
+WantedBy=multi-user.target

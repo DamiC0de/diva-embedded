@@ -1,0 +1,24 @@
+{
+  "id": "nicolas",
+  "name": "Nicolas",
+  "greetingName": "Nicolas",
+  "type": "adult",
+  "allowedIntents": "all",
+  "blockedIntents": [],
+  "promptPrefix": "Utilise le tutoiement. Ton naturel et efficace. L'humour est bienvenu, glisse des touches d'esprit quand c'est naturel. Reponses courtes et directes, 1-2 phrases max. L'utilisateur s'appelle Nicolas.",
+  "ttsConfig": {
+    "lengthScale": 1,
+    "pauseBetweenSentences": 200
+  },
+  "contentFilter": "none",
+  "morningBriefing": true,
+  "medicationReminders": false,
+  "proactiveCheckins": false,
+  "aidantContacts": [],
+  "communicationPrefs": {
+    "tutoiement": true,
+    "style": "neutre",
+    "humor": true,
+    "verbosity": "concise"
+  }
+}
