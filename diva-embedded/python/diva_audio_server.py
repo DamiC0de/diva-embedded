@@ -1402,7 +1402,7 @@ def _play_wav_safe(wav_path: str):
     _mute_mic()
     # Kill arecord to free ALSA device (half-duplex — can't record and play simultaneously)
     subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
-    # Reap zombies
+    # Reap ALL zombies
     try:
         while True:
             pid, _ = os.waitpid(-1, os.WNOHANG)
@@ -1410,14 +1410,28 @@ def _play_wav_safe(wav_path: str):
                 break
     except ChildProcessError:
         pass
-    time.sleep(0.05)  # Brief pause for ALSA to release
-    try:
-        subprocess.run(
+    # Wait for ALSA device to be fully released
+    for attempt in range(5):
+        time.sleep(0.1)
+        result = subprocess.run(
             ["aplay", "-D", ALSA_DEVICE, wav_path],
-            capture_output=True, timeout=30
+            capture_output=True, timeout=15
         )
-    finally:
-        _unmute_mic()
+        if result.returncode == 0:
+            break
+        # Device busy — kill arecord again and retry
+        if b"busy" in result.stderr.lower() or b"resource" in result.stderr.lower():
+            subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+            try:
+                while True:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                    if pid == 0:
+                        break
+            except ChildProcessError:
+                pass
+        else:
+            break  # Other error, don't retry
+    _unmute_mic()
 
 
 def _play_wav_bytes_safe(wav_bytes: bytes):
