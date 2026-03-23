@@ -1,0 +1,2369 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diva — Mon Foyer</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-startup-image" href="/icons/splash-640x1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="/icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="/icons/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="/icons/splash-1668x2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-hover: #22262f;
+      --border: #2a2e3a;
+      --text: #e4e6ed;
+      --text-muted: #8b8fa3;
+      --primary: #6366f1;
+      --primary-hover: #5558e6;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* ---- Login Screen ---- */
+    .login-overlay {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+      z-index: 100;
+    }
+    .login-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem;
+      width: 90%; max-width: 380px;
+      text-align: center;
+    }
+    .login-box h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+    .login-box .subtitle {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ---- Shared Form Elements ---- */
+    input[type="text"], input[type="password"], input[type="number"], select {
+      width: 100%;
+      padding: 0.625rem 0.875rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 0.9375rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
+      padding: 0.625rem 1.25rem;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 0.9375rem; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+      color: var(--text); background: var(--surface-hover);
+    }
+    .btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-ghost {
+      background: transparent; color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+    .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      color: var(--danger);
+      font-size: 0.8125rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ---- App Layout ---- */
+    .app-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .app-header h1 {
+      font-size: 1.125rem; font-weight: 600;
+    }
+    .app-header .logo {
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .app-header .dot {
+      width: 10px; height: 10px;
+      background: var(--primary);
+      border-radius: 50%;
+    }
+
+    /* Nav tabs */
+    .nav-tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .nav-tab {
+      flex: 1; min-width: 0;
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: none; border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .nav-tab:hover { color: var(--text); }
+    .nav-tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* Content area */
+    .content {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .card-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .card-title .icon { font-size: 1.125rem; }
+
+    /* Member list */
+    .member-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .member-row:last-child { border-bottom: none; }
+    .member-info { flex: 1; min-width: 0; }
+    .member-name { font-weight: 500; }
+    .member-meta { font-size: 0.8125rem; color: var(--text-muted); }
+    .member-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-admin { background: rgba(99, 102, 241, 0.15); color: var(--primary); }
+    .badge-active { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+    .badge-pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+
+    /* Rooms grid (domotique) */
+    .rooms-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .room-card {
+      background: var(--surface-hover);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .room-card:hover {
+      border-color: var(--primary);
+      background: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .room-card:hover .room-name, .room-card:hover .room-count { color: #fff; }
+    .room-card:active { transform: scale(0.96); }
+    .room-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .room-name { font-size: 1rem; font-weight: 600; }
+    .room-count { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+    /* Settings */
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-weight: 500; }
+    .setting-value { color: var(--text-muted); font-size: 0.875rem; }
+
+    /* Add member form */
+    .add-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .add-form .full { grid-column: 1 / -1; }
+
+    /* Fade transition */
+    [x-cloak] { display: none !important; }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .content { padding: 0.75rem; }
+      .card { padding: 1rem; }
+      .add-form { grid-template-columns: 1fr; }
+      .member-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body x-data="app()" x-init="init()" x-cloak>
+
+  <!-- ============ LOGIN SCREEN ============ -->
+  <template x-if="!authenticated && loaded">
+    <div class="login-overlay">
+      <div class="login-box">
+        <h1>Diva</h1>
+        <p class="subtitle">Connexion au tableau de bord</p>
+
+        <template x-if="!hasPassword">
+          <div>
+            <p style="color: var(--warning); font-size: 0.875rem; margin-bottom: 1rem;">
+              Première connexion — veuillez utiliser l'assistant de configuration.
+            </p>
+            <a href="/wizard.html" class="btn btn-primary" style="text-decoration:none; width:100%;">
+              Lancer l'assistant
+            </a>
+          </div>
+        </template>
+
+        <template x-if="hasPassword">
+          <form @submit.prevent="login()">
+            <div style="margin-bottom: 1rem;">
+              <input type="password" x-model="loginPassword" placeholder="Mot de passe" autofocus>
+            </div>
+            <div x-show="loginError" class="error-msg" x-text="loginError"></div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;" :disabled="!loginPassword">
+              Se connecter
+            </button>
+          </form>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============ WIZARD FIRST-BOOT (Story 12.2) ============ -->
+  <template x-if="showWizard && loaded">
+    <div class="wizard-overlay">
+      <div class="wizard-container">
+        <!-- Progress bar -->
+        <div class="wizard-progress">
+          <template x-for="(stepName, idx) in wizardStepNames" :key="idx">
+            <div class="wizard-step-indicator"
+                 :class="{ 'active': wizardStep === idx + 1, 'completed': wizardStep > idx + 1 }">
+              <div class="step-dot">
+                <template x-if="wizardStep > idx + 1"><span>&#10003;</span></template>
+                <template x-if="wizardStep <= idx + 1"><span x-text="idx + 1"></span></template>
+              </div>
+              <span class="step-label" x-text="stepName"></span>
+            </div>
+          </template>
+        </div>
+        <div class="wizard-step-counter" x-text="'Etape ' + wizardStep + '/' + (wizardHasDevices ? 7 : 5)"></div>
+
+        <!-- Step 1: Password -->
+        <template x-if="wizardStep === 1">
+          <div class="wizard-step-content">
+            <h2>Creez votre mot de passe</h2>
+            <p class="wizard-desc">Ce mot de passe protege l'acces a votre tableau de bord Diva.</p>
+            <form @submit.prevent="wizardSubmitStep1()">
+              <div class="wizard-field">
+                <label>Mot de passe</label>
+                <input type="password" x-model="wizardPassword" placeholder="Minimum 8 caracteres" autofocus>
+              </div>
+              <div class="wizard-field">
+                <label>Confirmation</label>
+                <input type="password" x-model="wizardPasswordConfirm" placeholder="Confirmez le mot de passe">
+              </div>
+              <div class="wizard-strength">
+                <div class="strength-bar">
+                  <div class="strength-fill" :style="'width:' + wizardPasswordStrengthPct + '%'"
+                       :class="wizardPasswordStrengthClass"></div>
+                </div>
+                <span class="strength-label" x-text="wizardPasswordStrengthLabel"></span>
+              </div>
+              <div x-show="wizardError" class="error-msg" x-text="wizardError"></div>
+              <div class="wizard-nav">
+                <div></div>
+                <button type="submit" class="btn btn-primary"
+                        :disabled="wizardPassword.length < 8 || wizardPassword !== wizardPasswordConfirm || wizardLoading">
+                  Suivant
+                </button>
+              </div>
+            </form>
+          </div>
+        </template>
+
+        <!-- Step 2: Members -->
+        <template x-if="wizardStep === 2">
+          <div class="wizard-step-content">
+            <h2>Membres du foyer</h2>
+            <p class="wizard-desc">Verifiez et completez la liste des membres de votre foyer.</p>
+            <div class="wizard-member-count">
+              <span x-text="wizardMembers.length"></span> membre(s)
+            </div>
+            <div class="wizard-members-list">
+              <template x-for="(member, idx) in wizardMembers" :key="member.id || idx">
+                <div class="wizard-member-row" x-show="!member._deleted">
+                  <input type="text" x-model="member.greetingName" placeholder="Prenom" class="wizard-input-sm">
+                  <select x-model="member.role" class="wizard-select-sm">
+                    <option value="admin">Admin</option>
+                    <option value="membre">Membre</option>
+                    <option value="enfant">Enfant</option>
+                  </select>
+                  <button class="btn btn-sm btn-danger" @click="member._deleted = true" type="button" title="Supprimer">&#10005;</button>
+                </div>
+              </template>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="wizardAddMember()" type="button" style="margin-top:0.5rem;">+ Ajouter un membre</button>
+            <div x-show="wizardError" class="error-msg" x-text="wizardError"></div>
+            <div class="wizard-nav">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <button class="btn btn-primary" @click="wizardSubmitStep2()" :disabled="wizardLoading" type="button">Suivant</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 3: Home Automation -->
+        <template x-if="wizardStep === 3">
+          <div class="wizard-step-content">
+            <h2>Domotique</h2>
+            <p class="wizard-desc">Detectez et configurez vos appareils connectes.</p>
+            <template x-if="!wizardHaAvailable">
+              <div class="wizard-info-box">
+                <p x-text="wizardHaMessage || 'Home Assistant n\'est pas installe. Vous pourrez configurer la domotique plus tard.'"></p>
+              </div>
+            </template>
+            <template x-if="wizardHaAvailable">
+              <div>
+                <div class="wizard-device-count"><span x-text="wizardDevices.length"></span> appareil(s) detecte(s)</div>
+                <template x-for="(group, type) in wizardDevicesGrouped" :key="type">
+                  <div class="wizard-device-group">
+                    <h3 class="wizard-group-title" x-text="wizardDeviceTypeLabel(type)"></h3>
+                    <template x-for="device in group" :key="device.entityId">
+                      <div class="wizard-device-row">
+                        <span x-text="device.name" class="device-name"></span>
+                        <select x-model="device.roomId" class="wizard-select-sm">
+                          <option value="">-- Piece --</option>
+                          <template x-for="room in wizardRooms" :key="room.areaId">
+                            <option :value="room.areaId" x-text="room.name"></option>
+                          </template>
+                        </select>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <button class="btn btn-ghost btn-sm" @click="wizardScanDevices()" :disabled="wizardLoading" type="button" style="margin-top:0.5rem;">
+                  Relancer le scan
+                </button>
+              </div>
+            </template>
+            <div x-show="wizardError" class="error-msg" x-text="wizardError"></div>
+            <div class="wizard-nav">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-ghost" @click="wizardSkipStep3()" type="button">Passer cette etape</button>
+                <button class="btn btn-primary" @click="wizardSubmitStep3()" :disabled="wizardLoading" type="button">Suivant</button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 4: Privacy -->
+        <!-- Step 4: Housing Type (Story 18.4 — only if devices detected) -->
+        <template x-if="wizardStep === 4 && wizardHasDevices">
+          <div class="wizard-step-content" x-data="housingTypeSelector()">
+            <h2>Type de logement</h2>
+            <p class="wizard-desc">Choisissez le type de logement pour pre-configurer vos pieces.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:12px 0;">
+              <template x-for="type in housingTypes" :key="type.id">
+                <div class="template-card" :class="{ selected: selectedType?.id === type.id }" @click="selectType(type)"
+                  style="padding:12px;border-radius:8px;border:2px solid var(--border);cursor:pointer;text-align:center;">
+                  <div style="font-weight:600;margin:4px 0;" x-text="type.name"></div>
+                  <div style="font-size:0.8em;color:var(--text-muted);" x-text="type.description"></div>
+                </div>
+              </template>
+            </div>
+            <template x-if="selectedType && suggestedRooms.length > 0">
+              <div style="margin:8px 0;">
+                <p style="font-size:0.9em;font-weight:600;">Pieces suggerees :</p>
+                <template x-for="(room, i) in suggestedRooms" :key="i">
+                  <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+                    <input type="text" x-model="room.name" style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);">
+                    <button class="btn btn-ghost" @click="removeRoom(i)" style="padding:2px 8px;font-size:0.8em;">X</button>
+                  </div>
+                </template>
+                <button class="btn btn-ghost" @click="addRoom()" style="font-size:0.85em;margin-top:4px;">+ Ajouter une piece</button>
+              </div>
+            </template>
+            <div x-show="result" style="margin:8px 0;padding:8px;border-radius:6px;background:rgba(34,197,94,0.1);color:var(--success);">
+              <span x-text="result?.roomsCreated?.length || 0"></span> piece(s) creee(s),
+              <span x-text="result?.roomsExisting?.length || 0"></span> existante(s).
+            </div>
+            <div x-show="error" class="error-msg" x-text="error"></div>
+            <div class="wizard-nav">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <button class="btn btn-primary" @click="applyTemplate().then(() => { if(result) { $root.wizardStep = 5; localStorage.setItem('diva_wizard_step', '5'); } })" :disabled="loading || !selectedType" type="button">
+                <span x-show="loading">Application...</span>
+                <span x-show="!loading">Suivant</span>
+              </button>
+              <button class="btn btn-ghost" @click="$root.wizardStep = 5; localStorage.setItem('diva_wizard_step', '5');" type="button">Passer</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 5: Routines & Scenes (Story 18.4 — only if devices detected) -->
+        <template x-if="wizardStep === 5 && wizardHasDevices">
+          <div class="wizard-step-content">
+            <h2>Routines et scenes</h2>
+            <p class="wizard-desc">Activez des routines et scenes adaptees a vos appareils.</p>
+            <div x-data="suggestedRoutines()" style="margin-bottom:16px;">
+              <p style="font-weight:600;font-size:0.95em;">Routines suggerees</p>
+              <template x-for="r in routines" :key="r.templateId">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+                  <div>
+                    <span style="font-weight:500;" x-text="r.name"></span>
+                    <span style="font-size:0.8em;color:var(--text-muted);margin-left:6px;" x-text="r.description"></span>
+                  </div>
+                  <input type="checkbox" :checked="selectedRoutines[r.templateId]" @change="toggleRoutine(r.templateId)">
+                </div>
+              </template>
+              <button class="btn" style="margin-top:8px;font-size:0.9em;" @click="activateSelected()" :disabled="loading">Activer les routines</button>
+              <div x-show="result" style="margin-top:4px;color:var(--success);font-size:0.85em;" x-text="(result?.created || 0) + ' routine(s) creee(s)'"></div>
+            </div>
+            <div x-data="suggestedScenes()">
+              <p style="font-weight:600;font-size:0.95em;">Scenes suggerees</p>
+              <template x-for="s in scenes" :key="s.templateId">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+                  <span style="font-weight:500;" x-text="s.name"></span>
+                  <input type="checkbox" :checked="selectedScenes[s.templateId]" @change="toggleScene(s.templateId)">
+                </div>
+              </template>
+              <button class="btn" style="margin-top:8px;font-size:0.9em;" @click="applySelected()" :disabled="loading">Generer les scenes</button>
+              <div x-show="result" style="margin-top:4px;color:var(--success);font-size:0.85em;" x-text="(result?.scenesCreated?.length || 0) + ' scene(s) creee(s)'"></div>
+            </div>
+            <div class="wizard-nav" style="margin-top:16px;">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <button class="btn btn-primary" @click="wizardStep = 6; localStorage.setItem('diva_wizard_step', '6');" type="button">Suivant</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 4 (no devices) / Step 6 (with devices): Privacy -->
+        <template x-if="(wizardStep === 4 && !wizardHasDevices) || (wizardStep === 6 && wizardHasDevices)">
+          <div class="wizard-step-content">
+            <h2>Confidentialite</h2>
+            <p class="wizard-desc">Configurez vos preferences de confidentialite. Les valeurs par defaut sont les plus protectrices.</p>
+            <div class="wizard-privacy-settings">
+              <div class="wizard-setting-row">
+                <div class="wizard-setting-info">
+                  <span class="wizard-setting-label">Telemetrie anonymisee</span>
+                  <span class="wizard-setting-desc">Envoi de donnees d'utilisation anonymisees pour ameliorer Diva. Aucune donnee personnelle n'est transmise.</span>
+                </div>
+                <label class="wizard-toggle">
+                  <input type="checkbox" x-model="wizardPrivacy.telemetryEnabled">
+                  <span class="wizard-toggle-slider"></span>
+                </label>
+              </div>
+              <div class="wizard-setting-row">
+                <div class="wizard-setting-info">
+                  <span class="wizard-setting-label">Retention des souvenirs</span>
+                  <span class="wizard-setting-desc">Duree de conservation des souvenirs conversationnels (court = 30j, moyen = 90j, long = 1 an).</span>
+                </div>
+                <select x-model="wizardPrivacy.memoryRetention" class="wizard-select-sm">
+                  <option value="short">Court terme</option>
+                  <option value="medium">Moyen terme</option>
+                  <option value="long">Long terme</option>
+                </select>
+              </div>
+              <div class="wizard-setting-row">
+                <div class="wizard-setting-info">
+                  <span class="wizard-setting-label">Detection de bien-etre</span>
+                  <span class="wizard-setting-desc">Active la detection proactive du bien-etre des personnes agees du foyer. Recommande si vous avez des seniors.</span>
+                </div>
+                <label class="wizard-toggle">
+                  <input type="checkbox" x-model="wizardPrivacy.wellnessDetectionEnabled">
+                  <span class="wizard-toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div x-show="wizardError" class="error-msg" x-text="wizardError"></div>
+            <div class="wizard-nav">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <button class="btn btn-primary" @click="wizardSubmitStep4()" :disabled="wizardLoading" type="button">Suivant</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 5 (no devices) / Step 7 (with devices): Summary -->
+        <template x-if="(wizardStep === 5 && !wizardHasDevices) || (wizardStep === 7 && wizardHasDevices)">
+          <div class="wizard-step-content">
+            <h2>Finalisation</h2>
+            <p class="wizard-desc">Voici un resume de votre configuration :</p>
+            <div class="wizard-summary">
+              <div class="wizard-summary-item">
+                <span class="summary-label">Membres du foyer</span>
+                <span class="summary-value" x-text="wizardMembers.filter(m => !m._deleted).length"></span>
+              </div>
+              <div class="wizard-summary-item">
+                <span class="summary-label">Appareils configures</span>
+                <span class="summary-value" x-text="wizardDevices.length"></span>
+              </div>
+              <div class="wizard-summary-item">
+                <span class="summary-label">Telemetrie</span>
+                <span class="summary-value" x-text="wizardPrivacy.telemetryEnabled ? 'Activee' : 'Desactivee'"></span>
+              </div>
+              <div class="wizard-summary-item">
+                <span class="summary-label">Retention souvenirs</span>
+                <span class="summary-value" x-text="wizardPrivacy.memoryRetention === 'short' ? 'Court terme' : wizardPrivacy.memoryRetention === 'long' ? 'Long terme' : 'Moyen terme'"></span>
+              </div>
+              <div class="wizard-summary-item">
+                <span class="summary-label">Detection bien-etre</span>
+                <span class="summary-value" x-text="wizardPrivacy.wellnessDetectionEnabled ? 'Activee' : 'Desactivee'"></span>
+              </div>
+            </div>
+            <div x-show="wizardError" class="error-msg" x-text="wizardError"></div>
+            <div class="wizard-nav">
+              <button class="btn btn-ghost" @click="wizardPrev()" type="button">Precedent</button>
+              <button class="btn btn-primary" @click="wizardFinalize()" :disabled="wizardLoading" type="button">
+                Terminer la configuration
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============ MAIN APP ============ -->
+  <template x-if="authenticated && loaded && !showWizard">
+    <div>
+      <!-- Welcome toast after wizard finalization (AC6) -->
+      <template x-if="welcomeMessage">
+        <div class="toast toast-success" x-text="welcomeMessage"></div>
+      </template>
+
+      <!-- Header -->
+      <header class="app-header">
+        <div class="logo">
+          <span class="dot"></span>
+          <h1 x-text="foyer ? foyer.name : 'Diva'"></h1>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="logout()">Déconnexion</button>
+      </header>
+
+      <!-- Navigation -->
+      <nav class="nav-tabs">
+        <button class="nav-tab" :class="{ active: tab === 'domotique' }" @click="tab = 'domotique'; onDomotiqueTabChange('domotique')">Domotique</button>
+        <button class="nav-tab" :class="{ active: tab === 'foyer' }" @click="tab = 'foyer'; onDomotiqueTabChange('foyer')">Foyer</button>
+        <button class="nav-tab" :class="{ active: tab === 'souvenirs' }" @click="tab = 'souvenirs'; onDomotiqueTabChange('souvenirs')">Souvenirs</button>
+        <button class="nav-tab" :class="{ active: tab === 'parametres' }" @click="tab = 'parametres'">Paramètres</button>
+      </nav>
+
+      <!-- ======== TAB: FOYER ======== -->
+      <div class="content" x-show="tab === 'foyer'">
+        <!-- Foyer name card -->
+        <div class="card">
+          <div class="card-title">
+            <span class="icon">&#127968;</span> Mon Foyer
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <template x-if="!editingFoyerName">
+              <div style="display:flex; gap:0.5rem; align-items:center; width:100%;">
+                <span x-text="foyer?.name || 'Mon Foyer'" style="flex:1;"></span>
+                <button class="btn btn-ghost btn-sm" @click="editingFoyerName = true; newFoyerName = foyer?.name || ''">Modifier</button>
+              </div>
+            </template>
+            <template x-if="editingFoyerName">
+              <form @submit.prevent="updateFoyerName()" style="display:flex; gap:0.5rem; width:100%;">
+                <input type="text" x-model="newFoyerName" style="flex:1;">
+                <button type="submit" class="btn btn-primary btn-sm">OK</button>
+                <button type="button" class="btn btn-ghost btn-sm" @click="editingFoyerName = false">Annuler</button>
+              </form>
+            </template>
+          </div>
+        </div>
+
+        <!-- Members card -->
+        <div class="card">
+          <div class="card-title" style="justify-content: space-between;">
+            <span><span class="icon">&#128101;</span> Membres</span>
+            <button class="btn btn-primary btn-sm" @click="showAddMember = !showAddMember">
+              <span x-text="showAddMember ? 'Annuler' : '+ Ajouter'"></span>
+            </button>
+          </div>
+
+          <!-- Add member form -->
+          <div x-show="showAddMember" class="add-form" style="border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 0.5rem;">
+            <input type="text" x-model="newMember.name" placeholder="Prénom *">
+            <input type="number" x-model.number="newMember.age" placeholder="Âge" min="0" max="120">
+            <input type="text" x-model="newMember.relation" placeholder="Relation (ex: conjoint, enfant)">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem;">
+              <input type="checkbox" x-model="newMember.isAdmin"> Administrateur
+            </label>
+            <div class="full">
+              <button class="btn btn-primary btn-sm" @click="addNewMember()" :disabled="!newMember.name.trim()">
+                Ajouter le membre
+              </button>
+            </div>
+          </div>
+
+          <!-- Members list -->
+          <template x-if="members.length === 0">
+            <p style="color: var(--text-muted); font-size: 0.875rem; padding: 0.5rem 0;">
+              Aucun membre pour le moment.
+            </p>
+          </template>
+          <template x-for="m in members" :key="m.id">
+            <div class="member-row">
+              <div class="member-info">
+                <div class="member-name">
+                  <span x-text="m.name"></span>
+                  <template x-if="m.isAdmin"><span class="badge badge-admin">Admin</span></template>
+                </div>
+                <div class="member-meta">
+                  <span x-show="m.age" x-text="m.age + ' ans'"></span>
+                  <span x-show="m.relation" x-text="m.relation ? ' — ' + m.relation : ''"></span>
+                  <template x-if="m.state === 'ACTIF'"><span class="badge badge-active">Actif</span></template>
+                  <template x-if="m.state === 'PRE_INSCRIT'"><span class="badge badge-pending">En attente</span></template>
+                </div>
+              </div>
+              <div class="member-actions">
+                <template x-if="!m.isAdmin">
+                  <button class="btn btn-ghost btn-sm" @click="promoteMember(m.id)" title="Promouvoir admin">&#9733;</button>
+                </template>
+                <template x-if="m.isAdmin">
+                  <button class="btn btn-ghost btn-sm" @click="demoteMember(m.id)" title="Rétrograder">&#9734;</button>
+                </template>
+                <button class="btn btn-ghost btn-sm" @click="deleteMember(m.id, m.name)" title="Supprimer" style="color:var(--danger);">&#10005;</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ======== TAB: DOMOTIQUE ======== -->
+      <div class="content" x-show="tab === 'domotique'" @x-tab-activated="onDomotiqueTabChange($event)" style="position: relative;">
+
+        <!-- ========== Story 18.2 : INDICATEUR CONNEXION WS ========== -->
+        <div x-data="wsIndicator()" class="ws-indicator" x-show="tab === 'domotique'">
+          <span class="ws-dot" :class="dotClass"></span>
+          <span class="ws-label" x-text="label"></span>
+        </div>
+
+        <!-- ========== Story 18.1 : SCENES SUGGEREES ========== -->
+        <template x-if="tab === 'domotique' && $data._domPieces?.haAvailable && (window._domScenes?.scenes?.length || 0) > 0">
+          <div class="scenes-bar">
+            <template x-for="scene in (window._domScenes?.scenes || [])" :key="scene.id">
+              <button class="scene-chip"
+                :class="{
+                  favorite: scene.isFavorite,
+                  executing: window._domScenes?.executing === scene.id
+                }"
+                @mousedown="onScenePointerDown(scene.id, $event)"
+                @mouseup="onScenePointerUp(scene.id)"
+                @mouseleave="onScenePointerCancel()"
+                @touchstart.prevent="onScenePointerDown(scene.id, $event)"
+                @touchend.prevent="onScenePointerUp(scene.id)"
+                @touchcancel="onScenePointerCancel()"
+                :title="scene.isFavorite ? 'Favori — long press pour retirer' : 'Long press pour ajouter aux favoris'">
+                <span class="scene-chip-icon" x-text="getSceneIcon(scene.icon)"></span>
+                <span x-text="scene.name"></span>
+              </button>
+            </template>
+          </div>
+        </template>
+
+        <!-- ========== Story 12.3 : VUE PAR PIÈCES ENRICHIE ========== -->
+        <!-- AC8 : HA indisponible -->
+        <template x-if="tab === 'domotique' && !$data._domPieces?.haAvailable && !$data._domPieces?.loading">
+          <div class="card">
+            <div class="card-title"><span class="icon">&#9888;</span> Home Assistant</div>
+            <div class="domotique-empty-msg">
+              <div class="empty-icon">&#128268;</div>
+              <h3>Home Assistant n'est pas connecté</h3>
+              <p>Vérifiez que le service est démarré.</p>
+            </div>
+            <button class="btn" @click="loadDomotiquePieces()" style="margin-top: 0.75rem; width: 100%;">
+              &#8635; Réessayer
+            </button>
+          </div>
+        </template>
+
+        <!-- Chargement -->
+        <div class="card" x-show="$data._domPieces?.loading" style="text-align:center; padding: 1.5rem;">
+          <p style="color: var(--text-muted);">Chargement des pièces...</p>
+        </div>
+
+        <!-- AC8 : Aucune pièce configurée -->
+        <template x-if="tab === 'domotique' && $data._domPieces?.haAvailable && !$data._domPieces?.loading && $data._domPieces?.rooms?.length === 0">
+          <div class="card">
+            <div class="domotique-empty-msg">
+              <div class="empty-icon">&#127968;</div>
+              <h3>Aucune pièce configurée</h3>
+              <p>Utilisez le dashboard ou la voix pour assigner vos appareils à des pièces.</p>
+            </div>
+          </div>
+        </template>
+
+        <!-- AC1 : Grille responsive de pièces (3/2/1 colonnes) -->
+        <template x-if="tab === 'domotique' && $data._domPieces?.haAvailable && ($data._domPieces?.rooms?.length || 0) > 0 && !$data._domPieces?.selectedRoomDetail">
+          <div class="card">
+            <div class="card-title">
+              <span class="icon">&#127760;</span> Mes pièces
+              <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">
+                <span x-text="($data._domPieces?.rooms || []).reduce((s, r) => s + r.totalDevices, 0)"></span> appareils
+              </span>
+            </div>
+
+            <div class="rooms-grid-v2">
+              <template x-for="room in ($data._domPieces?.rooms || [])" :key="room.roomId">
+                <div class="room-card-v2"
+                  :class="{
+                    'lights-on': room.lightsOn > 0,
+                    'state-changed': room._stateChanged
+                  }"
+                  @mousedown="onRoomPointerDown(room, $event)"
+                  @mouseup="onRoomPointerUp(room, $event)"
+                  @mouseleave="onRoomPointerCancel()"
+                  @touchstart.prevent="onRoomPointerDown(room, $event)"
+                  @touchend.prevent="onRoomPointerUp(room, $event)"
+                  @touchcancel="onRoomPointerCancel()">
+                  <div class="room-card-v2-header">
+                    <span class="room-card-v2-icon" x-text="room.icon"></span>
+                    <!-- AC3 : bouton d'expansion vers le détail -->
+                    <button class="room-expand-btn"
+                      @click.stop="openRoomDetailFromCard(room)"
+                      title="Voir les appareils">
+                      &#8250;
+                    </button>
+                  </div>
+                  <div class="room-card-v2-name" x-text="room.name"></div>
+                  <!-- AC1 : stats résumé — lumières allumées, température -->
+                  <div class="room-card-v2-stats">
+                    <div class="room-stat"
+                      :class="{ 'lights-on-stat': room.lightsOn > 0 }"
+                      x-show="room.totalDevices > 0">
+                      <template x-if="room.lightsOn > 0">
+                        <span>&#128161; <span x-text="room.lightsOn"></span>/<span x-text="room.devices?.filter(d => d.type === 'light').length || 0"></span> lumières</span>
+                      </template>
+                      <template x-if="room.lightsOn === 0">
+                        <span x-text="room.totalDevices + ' appareil' + (room.totalDevices > 1 ? 's' : '')"></span>
+                      </template>
+                    </div>
+                    <!-- AC1 : température ambiante si capteur présent -->
+                    <div class="room-stat" x-show="room.ambientTemperature !== null && room.ambientTemperature !== undefined">
+                      &#127777; <span x-text="room.ambientTemperature + '°C'"></span>
+                    </div>
+                  </div>
+                  <!-- AC2 : bouton toggle toutes les lumières de la pièce -->
+                  <button class="room-toggle-btn"
+                    :class="{ 'all-on': room.lightsOn > 0 }"
+                    @click="toggleRoomLightsFromCard(room)"
+                    x-show="(room.devices || []).some(d => d.type === 'light' || d.type === 'switch')">
+                    <template x-if="room.lightsOn > 0">
+                      <span>&#9681; Tout éteindre</span>
+                    </template>
+                    <template x-if="room.lightsOn === 0">
+                      <span>&#9681; Tout allumer</span>
+                    </template>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- AC3 : Panneau de détail d'une pièce (slide-in) -->
+        <template x-if="$data._domPieces?.selectedRoomDetail">
+          <div class="room-detail-panel">
+            <!-- Backdrop (clic pour fermer) -->
+            <div class="room-detail-backdrop" @click="closeRoomDetailPanel()"></div>
+
+            <div class="room-detail-content">
+              <!-- Header -->
+              <div class="room-detail-header">
+                <span class="room-detail-header-icon" x-text="$data._domPieces?.selectedRoomDetail?.icon"></span>
+                <h2 class="room-detail-header-title" x-text="$data._domPieces?.selectedRoomDetail?.name"></h2>
+                <button class="room-detail-back-btn" @click="closeRoomDetailPanel()">
+                  &#8592; Retour
+                </button>
+              </div>
+
+              <!-- Chargement détail -->
+              <div style="padding: 1rem; text-align: center;" x-show="$data._domPieces?.loadingDetail">
+                <p style="color: var(--text-muted);">Chargement...</p>
+              </div>
+
+              <!-- Liste des appareils (AC3, AC9 : vocabulaire humain) -->
+              <div class="room-detail-devices" x-show="!$data._domPieces?.loadingDetail">
+                <template x-for="device in ($data._domPieces?.selectedRoomDetail?.devices || [])" :key="device.entityId">
+                  <div class="device-row"
+                    :class="{ 'offline': device.isOffline }">
+                    <!-- Infos appareil (AC9 : friendlyName, pas entity_id) -->
+                    <div class="device-info">
+                      <div class="device-name">
+                        <span x-text="device.friendlyName"></span>
+                        <!-- AC8 : badge "hors ligne" si unavailable -->
+                        <span class="device-offline-badge" x-show="device.isOffline">hors ligne</span>
+                      </div>
+                      <div class="device-type-badge" x-text="{
+                        'light': 'Lumière',
+                        'switch': 'Prise',
+                        'cover': 'Volet',
+                        'climate': 'Thermostat',
+                        'sensor': 'Capteur'
+                      }[device.type] || device.type"></div>
+                    </div>
+
+                    <!-- AC3 : Contrôles adaptés par type -->
+                    <div class="device-controls">
+
+                      <!-- Lumières : toggle + slider luminosité (AC9 : 0-100%, jamais 0-255) -->
+                      <template x-if="device.type === 'light'">
+                        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
+                          <button class="device-toggle-btn"
+                            :class="{ 'on': device.state === 'on' }"
+                            :disabled="device.isOffline"
+                            @click="toggleDeviceFromDetail(device)"
+                            x-text="device.state === 'on' ? 'ON' : 'OFF'">
+                          </button>
+                          <!-- Slider luminosité (si disponible) — debounce 300ms -->
+                          <template x-if="device.state === 'on' && device.attributes?.brightnessPercent !== undefined">
+                            <div class="device-slider-wrapper">
+                              <div class="device-slider-label">
+                                <span x-text="device.attributes?.brightnessPercent || 0"></span>%
+                              </div>
+                              <input type="range" class="device-slider"
+                                min="1" max="100"
+                                :value="device.attributes?.brightnessPercent || 100"
+                                :disabled="device.isOffline"
+                                @input="setBrightnessFromSlider(device, $event.target.value)">
+                            </div>
+                          </template>
+                        </div>
+                      </template>
+
+                      <!-- Prises : toggle on/off -->
+                      <template x-if="device.type === 'switch'">
+                        <button class="device-toggle-btn"
+                          :class="{ 'on': device.state === 'on' }"
+                          :disabled="device.isOffline"
+                          @click="toggleDeviceFromDetail(device)"
+                          x-text="device.state === 'on' ? 'ON' : 'OFF'">
+                        </button>
+                      </template>
+
+                      <!-- Volets : toggle + slider position (0-100%) -->
+                      <template x-if="device.type === 'cover'">
+                        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
+                          <button class="device-toggle-btn"
+                            :class="{ 'on': device.state === 'open' }"
+                            :disabled="device.isOffline"
+                            @click="toggleDeviceFromDetail(device)"
+                            x-text="device.state === 'open' ? 'Ouvert' : 'Fermé'">
+                          </button>
+                          <div class="device-slider-wrapper">
+                            <div class="device-slider-label">
+                              <span x-text="device.attributes?.positionPercent ?? 0"></span>%
+                            </div>
+                            <input type="range" class="device-slider"
+                              min="0" max="100"
+                              :value="device.attributes?.positionPercent ?? 0"
+                              :disabled="device.isOffline"
+                              @input="setPositionFromSlider(device, $event.target.value)">
+                          </div>
+                        </div>
+                      </template>
+
+                      <!-- Thermostats : température courante + boutons +/- par 0.5° -->
+                      <template x-if="device.type === 'climate'">
+                        <div class="device-temp-controls">
+                          <button class="device-temp-btn"
+                            :disabled="device.isOffline"
+                            @click="adjustTempFromDetail(device, -0.5)">
+                            −
+                          </button>
+                          <div class="device-temp-value">
+                            <span x-text="device.attributes?.temperature ?? '–'"></span>°C
+                          </div>
+                          <button class="device-temp-btn"
+                            :disabled="device.isOffline"
+                            @click="adjustTempFromDetail(device, +0.5)">
+                            +
+                          </button>
+                        </div>
+                      </template>
+
+                      <!-- Capteurs : lecture seule (AC3) -->
+                      <template x-if="device.type === 'sensor'">
+                        <div style="text-align:right;">
+                          <template x-if="device.attributes?.temperature !== undefined">
+                            <span class="device-sensor-value">
+                              <span x-text="device.attributes.temperature"></span>
+                              <span class="device-sensor-unit">°C</span>
+                            </span>
+                          </template>
+                          <template x-if="device.attributes?.humidity !== undefined">
+                            <span class="device-sensor-value" style="margin-left:0.5rem;">
+                              <span x-text="device.attributes.humidity"></span>
+                              <span class="device-sensor-unit">%</span>
+                            </span>
+                          </template>
+                          <template x-if="device.attributes?.temperature === undefined && device.attributes?.humidity === undefined">
+                            <span class="device-sensor-value" x-text="device.state"></span>
+                          </template>
+                        </div>
+                      </template>
+
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Pièce sans appareil -->
+                <p x-show="($data._domPieces?.selectedRoomDetail?.devices || []).length === 0"
+                   style="color: var(--text-muted); text-align: center; padding: 1rem;">
+                  Aucun appareil dans cette pièce.
+                </p>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Toast d'erreur domotique (AC2 : rollback) -->
+        <template x-if="$data._domPieces?.errorToast">
+          <div class="domotique-error-toast" x-text="$data._domPieces?.errorToast"></div>
+        </template>
+
+        <!-- ========== FIN Story 12.3 ========== -->
+
+        <!-- ========== Story 18.1 : FIL D'ACTIVITE ========== -->
+        <template x-if="tab === 'domotique' && $data._domPieces?.haAvailable">
+          <div class="card activity-feed">
+            <div class="activity-feed-header">
+              <h3><span class="icon">&#128196;</span> Activite recente</h3>
+            </div>
+
+            <template x-if="window._domActivity?.empty">
+              <div class="activity-empty">Aucune activite recente</div>
+            </template>
+
+            <template x-for="entry in (window._domActivity?.activities || [])" :key="entry.id">
+              <div class="activity-entry">
+                <span class="activity-source-icon" x-text="getSourceIcon(entry.source)"></span>
+                <div class="activity-info">
+                  <span class="activity-who" x-text="entry.who"></span>
+                  <span class="activity-action" x-text="formatActivityAction(entry)"></span>
+                </div>
+                <span class="activity-when" x-text="entry.when"></span>
+              </div>
+            </template>
+
+            <template x-if="window._domActivity?.hasMore && !window._domActivity?.empty">
+              <button class="activity-load-more" @click="loadMoreActivities()">
+                Charger plus...
+              </button>
+            </template>
+          </div>
+        </template>
+        <!-- ========== FIN Story 18.1 ========== -->
+
+        <!-- HA Status (Legacy) -->
+        <div class="card" x-show="!haConnected && !domotiqueLoading">
+          <div class="card-title"><span class="icon">&#9888;</span> Home Assistant</div>
+          <p style="color: var(--text-muted);">Home Assistant n'est pas encore connecté.</p>
+          <button class="btn" @click="loadDomotique()" style="margin-top: 0.5rem;">Réessayer</button>
+        </div>
+
+        <div class="card" x-show="domotiqueLoading">
+          <p style="color: var(--text-muted); text-align: center;">Chargement des appareils...</p>
+        </div>
+
+        <!-- ========== 1. PIÈCES EN PREMIER ========== -->
+
+        <!-- Rooms grid (Story 18.1 / FR100) -->
+        <div class="card" x-show="haConnected && !selectedRoom && rooms.length > 0">
+          <div class="card-title">
+            <span class="icon">&#127760;</span> Mes pièces
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">
+              <span x-text="allDevices.length"></span> appareils | HA <span x-text="haVersion"></span>
+            </span>
+          </div>
+          <div class="rooms-grid">
+            <template x-for="room in rooms" :key="room.id">
+              <div class="room-card"
+                @click="toggleRoom(room)"
+                @contextmenu.prevent="selectedRoom = room"
+                @touchstart="roomTouchStart($event, room)"
+                @touchend="roomTouchEnd($event, room)"
+                :style="room.lightsOn > 0 ? 'border-color: var(--accent); box-shadow: 0 0 8px rgba(99, 102, 241, 0.2)' : ''">
+                <div class="room-icon" x-text="room.icon"></div>
+                <div class="room-name" x-text="room.name"></div>
+                <div class="room-count">
+                  <span x-show="room.lightsOn > 0" style="color: var(--accent);" x-text="room.lightsOn + ' ON'"></span>
+                  <span x-show="room.lightsOn === 0" style="color: var(--text-muted);" x-text="room.devices + ' appareil' + (room.devices > 1 ? 's' : '')"></span>
+                  <span x-show="room.temperature" style="color: var(--text-muted); margin-left: 0.25rem;" x-text="room.temperature + '°C'"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Room detail -->
+        <div class="card" x-show="haConnected && selectedRoom">
+          <div class="card-title">
+            <span class="icon" x-text="selectedRoom?.icon"></span>
+            <span x-text="selectedRoom?.name"></span>
+            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+              <button class="btn" @click="deleteRoom(selectedRoom)" style="font-size: 0.75rem; color: #ef4444; border-color: #ef4444;">Supprimer</button>
+              <button class="btn" @click="selectedRoom = null" style="font-size: 0.75rem;">Retour</button>
+            </div>
+          </div>
+          <template x-for="device in selectedRoom?.deviceList || []" :key="device.id">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+              <div>
+                <div style="font-weight: 500;" x-text="device.name"></div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" x-text="device.domain"></div>
+              </div>
+              <template x-if="device.domain === 'light' || device.domain === 'switch' || device.domain === 'cover'">
+                <button class="btn" @click="toggleDevice(device)"
+                  :style="device.state === 'on' ? 'background: var(--accent)' : ''"
+                  x-text="device.state === 'on' ? 'ON' : 'OFF'">
+                </button>
+              </template>
+              <template x-if="device.domain === 'sensor' || device.domain === 'binary_sensor'">
+                <span style="color: var(--accent);" x-text="device.state + (device.attributes?.temperature ? '°C' : '')"></span>
+              </template>
+            </div>
+          </template>
+          <p x-show="(selectedRoom?.deviceList || []).length === 0" style="color: var(--text-muted); text-align: center; padding: 1rem;">
+            Aucun appareil dans cette pièce. Assignez-en depuis la liste ci-dessous.
+          </p>
+        </div>
+
+        <!-- ========== 2. MODE + SCÈNES ========== -->
+
+        <!-- Mode actif (Story 16.1 / FR95) -->
+        <div class="card" x-show="haConnected && !selectedRoom" style="background: linear-gradient(135deg, var(--surface), var(--surface-hover)); text-align: center; padding: 1rem;">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Mode actif</div>
+          <div style="font-size: 1.25rem; font-weight: 700;" x-text="activeMode || 'MAISON'"></div>
+          <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 0.5rem;">
+            <button class="btn" :style="activeMode === 'MAISON' ? 'background: var(--accent); color:#fff' : ''" @click="setMode('MAISON')">&#127968; Maison</button>
+            <button class="btn" :style="activeMode === 'NUIT' ? 'background: var(--accent); color:#fff' : ''" @click="setMode('NUIT')">&#127769; Nuit</button>
+            <button class="btn" :style="activeMode === 'ABSENT' ? 'background: var(--accent); color:#fff' : ''" @click="setMode('ABSENT')">&#128682; Absent</button>
+          </div>
+        </div>
+
+        <!-- Scènes rapides (Story 16.5 / FR105) -->
+        <div class="card" x-show="haConnected && !selectedRoom" style="padding: 0.75rem;">
+          <div style="display: flex; gap: 0.5rem; overflow-x: auto;">
+            <template x-for="scene in suggestedScenes" :key="scene.name">
+              <button class="btn" @click="executeScene(scene)" style="white-space: nowrap; font-size: 0.8rem;"
+                x-text="scene.icon + ' ' + scene.name"></button>
+            </template>
+          </div>
+        </div>
+
+        <!-- ========== 3. APPAREILS NON ASSIGNÉS ========== -->
+
+        <!-- Appareils non assignés -->
+        <div class="card" x-show="haConnected && !selectedRoom && unassignedDevices.length > 0" style="border-color: #f59e0b;">
+          <div class="card-title">
+            <span class="icon">&#9888;</span> Appareils non assignés
+            <span style="font-size: 0.75rem; color: #f59e0b; margin-left: auto;" x-text="unassignedDevices.length + ' appareil(s)'"></span>
+          </div>
+          <template x-for="device in unassignedDevices" :key="device.id">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+              <div>
+                <div style="font-weight: 500;" x-text="device.name"></div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" x-text="device.domain"></div>
+              </div>
+              <select @change="assignDeviceToRoom(device, $event.target.value)" style="padding: 0.4rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8rem;">
+                <option value="">Assigner à...</option>
+                <template x-for="room in rooms" :key="room.id">
+                  <option :value="room.area_id" x-text="room.icon + ' ' + room.name"></option>
+                </template>
+              </select>
+            </div>
+          </template>
+        </div>
+
+        <!-- ========== 4. ADMIN + ACTIVITÉ ========== -->
+
+        <!-- Admin actions -->
+        <div class="card" x-show="haConnected && !selectedRoom" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button class="btn" @click="showCreateRoom = true" style="flex: 1; min-width: 140px;">
+            &#10010; Créer une pièce
+          </button>
+          <button class="btn" @click="scanDevices()" style="flex: 1; min-width: 140px;">
+            &#128269; Scanner les appareils
+          </button>
+          <button class="btn" @click="loadDomotique()" style="flex: 1; min-width: 140px;">
+            &#128260; Rafraîchir
+          </button>
+        </div>
+
+        <!-- Formulaire création pièce -->
+        <div class="card" x-show="showCreateRoom" style="border-color: var(--accent);">
+          <div class="card-title"><span class="icon">&#10010;</span> Nouvelle pièce</div>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <input type="text" x-model="newRoomName" placeholder="Nom de la pièce (ex: Salon, Chambre Malory)"
+              style="padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+              <template x-for="preset in [
+                {icon:'🛋️', name:'Salon'}, {icon:'🍳', name:'Cuisine'}, {icon:'🛏️', name:'Chambre'},
+                {icon:'🚿', name:'Salle de bain'}, {icon:'💻', name:'Bureau'}, {icon:'🚪', name:'Entrée'},
+                {icon:'🌳', name:'Jardin'}, {icon:'🚗', name:'Garage'}, {icon:'👶', name:'Chambre enfant'}
+              ]" :key="preset.name">
+                <button type="button" class="btn" @click="newRoomName = newRoomName || preset.name; newRoomIcon = preset.icon"
+                  :style="newRoomIcon === preset.icon ? 'background: var(--accent); color: #fff' : ''"
+                  style="font-size: 0.8rem; padding: 0.5rem;"
+                  x-text="preset.icon + ' ' + preset.name">
+                </button>
+              </template>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn" @click="createRoom()" style="flex: 1; background: var(--accent); color: #fff;">Créer</button>
+              <button class="btn" @click="showCreateRoom = false" style="flex: 1;">Annuler</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appareils non assignés -->
+        <div class="card" x-show="haConnected && !selectedRoom && unassignedDevices.length > 0" style="border-color: #f59e0b;">
+          <div class="card-title">
+            <span class="icon">&#9888;</span> Appareils non assignés
+            <span style="font-size: 0.75rem; color: #f59e0b; margin-left: auto;" x-text="unassignedDevices.length + ' appareil(s)'"></span>
+          </div>
+          <template x-for="device in unassignedDevices" :key="device.id">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+              <div>
+                <div style="font-weight: 500;" x-text="device.name"></div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" x-text="device.domain"></div>
+              </div>
+              <select @change="assignDeviceToRoom(device, $event.target.value)" style="padding: 0.4rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8rem;">
+                <option value="">Assigner à...</option>
+                <template x-for="room in rooms" :key="room.id">
+                  <option :value="room.area_id" x-text="room.icon + ' ' + room.name"></option>
+                </template>
+              </select>
+            </div>
+          </template>
+        </div>
+
+        <!-- (ancien bloc rooms supprimé — déplacé en haut) -->
+
+        <!-- Fil d'activité (Story 18.2 / FR102) -->
+        <div class="card" x-show="haConnected && !selectedRoom">
+          <div class="card-title"><span class="icon">&#128203;</span> Activité récente</div>
+          <div style="max-height: 200px; overflow-y: auto;">
+            <template x-for="event in activityFeed" :key="event.id">
+              <div style="display: flex; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem;">
+                <span style="color: var(--text-muted); min-width: 3rem;" x-text="event.time"></span>
+                <span x-text="event.who" style="font-weight: 500; min-width: 4rem;"></span>
+                <span x-text="event.action" style="color: var(--text-muted);"></span>
+              </div>
+            </template>
+            <p x-show="activityFeed.length === 0" style="color: var(--text-muted); text-align: center; font-size: 0.8rem;">Aucune activité récente</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== TAB: SOUVENIRS ======== -->
+      <div class="content" x-show="tab === 'souvenirs'">
+        <div class="card">
+          <div class="card-title">
+            <span class="icon">&#128218;</span> Souvenirs &amp; Mémoires
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.875rem;">
+            Les souvenirs enregistrés par Diva lors de vos conversations apparaîtront ici.
+            Vous pourrez les consulter, modifier ou supprimer.
+          </p>
+          <div style="margin-top: 1rem; padding: 1.5rem; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-sm);">
+            <p style="color: var(--text-muted);">Fonctionnalité bientôt disponible</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== SECTION: SANTÉ APPAREILS (Story 18.6) ======== -->
+      <div class="card" x-show="tab === 'domotique' && haConnected && !selectedRoom && interfaceLevel !== 'simple'">
+        <div class="card-title"><span class="icon">&#128295;</span> Santé des appareils</div>
+        <template x-for="device in allDevices.filter(d => d.state === 'unavailable')" :key="device.id">
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+            <span style="color: #ef4444;">&#9888;</span>
+            <div>
+              <div style="font-weight: 500;" x-text="device.name"></div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Hors ligne</div>
+            </div>
+          </div>
+        </template>
+        <p x-show="allDevices.filter(d => d.state === 'unavailable').length === 0"
+           style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">
+          Tous les appareils sont en ligne
+        </p>
+      </div>
+
+      <!-- ======== TAB: PARAMETRES ======== -->
+      <div class="content" x-show="tab === 'parametres'">
+        <!-- Privacy card -->
+        <div class="card">
+          <div class="card-title">
+            <span class="icon">&#128274;</span> Confidentialité
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Traitement local</div>
+              <div class="setting-value">Toutes les données restent sur l'appareil</div>
+            </div>
+            <span class="badge badge-active">Actif</span>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Bases de données</div>
+              <div class="setting-value">diva.db, diva-medical.db, audit.db</div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Statut du foyer</div>
+              <div class="setting-value" x-text="foyer?.status || 'Non configuré'"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backup card -->
+        <div class="card">
+          <div class="card-title">
+            <span class="icon">&#128190;</span> Sauvegarde
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Dernière sauvegarde</div>
+              <div class="setting-value" x-text="settings?.backup?.lastBackup ? new Date(settings.backup.lastBackup).toLocaleString('fr-FR') : 'Aucune'"></div>
+            </div>
+            <button class="btn btn-primary btn-sm" @click="triggerBackup()" :disabled="backingUp">
+              <span x-text="backingUp ? 'En cours...' : 'Sauvegarder'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Account card -->
+        <div class="card" x-data="{ showPwForm: false, currentPw: '', newPw: '', confirmPw: '', pwMsg: '', pwLoading: false }">
+          <div class="card-title">
+            <span class="icon">&#9881;</span> Compte
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Mot de passe</div>
+              <div class="setting-value">Protège l'accès au tableau de bord et à Home Assistant</div>
+            </div>
+            <button class="btn btn-primary btn-sm" @click="showPwForm = !showPwForm" x-text="showPwForm ? 'Annuler' : 'Modifier'"></button>
+          </div>
+          <div x-show="showPwForm" style="margin-top:12px;">
+            <div style="display:flex;flex-direction:column;gap:8px;max-width:360px;">
+              <input type="password" x-model="currentPw" placeholder="Mot de passe actuel" style="padding:8px;border-radius:6px;border:1px solid var(--border);">
+              <input type="password" x-model="newPw" placeholder="Nouveau mot de passe (min. 8 caractères)" style="padding:8px;border-radius:6px;border:1px solid var(--border);">
+              <input type="password" x-model="confirmPw" placeholder="Confirmer le nouveau mot de passe" style="padding:8px;border-radius:6px;border:1px solid var(--border);">
+              <div x-show="pwMsg" x-text="pwMsg" :style="pwMsg.includes('succ') ? 'color:var(--success,#22c55e)' : 'color:var(--danger,#ef4444)'" style="font-size:0.85em;"></div>
+              <button class="btn btn-primary" :disabled="pwLoading" @click="
+                pwMsg = '';
+                if (!currentPw) { pwMsg = 'Mot de passe actuel requis'; return; }
+                if (newPw.length < 8) { pwMsg = 'Minimum 8 caractères'; return; }
+                if (newPw !== confirmPw) { pwMsg = 'Les mots de passe ne correspondent pas'; return; }
+                pwLoading = true;
+                fetch('/api/parametres', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+                }).then(r => r.json()).then(d => {
+                  pwLoading = false;
+                  if (d.success) {
+                    pwMsg = 'Mot de passe modifié avec succès (dashboard + Home Assistant)';
+                    currentPw = ''; newPw = ''; confirmPw = '';
+                    setTimeout(() => { showPwForm = false; pwMsg = ''; }, 3000);
+                  } else {
+                    pwMsg = d.error || 'Erreur lors du changement';
+                  }
+                }).catch(() => { pwLoading = false; pwMsg = 'Erreur réseau'; });
+              " x-text="pwLoading ? 'En cours...' : 'Enregistrer'"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Story 18.4: Templates card (AC8) -->
+        <div class="card" x-data="templatesPage()">
+          <div class="card-title">
+            <span class="icon">&#128221;</span> Templates domotique
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Templates de logement</div>
+              <div class="setting-value">Re-appliquer un template ou ajouter des routines/scenes</div>
+            </div>
+          </div>
+          <div class="template-tabs" style="display:flex;gap:8px;margin:8px 0;">
+            <button class="btn btn-sm" :class="{ 'btn-active': activeTab === 'housing' }" @click="switchTab('housing')">Logement</button>
+            <button class="btn btn-sm" :class="{ 'btn-active': activeTab === 'routines' }" @click="switchTab('routines')">Routines</button>
+            <button class="btn btn-sm" :class="{ 'btn-active': activeTab === 'scenes' }" @click="switchTab('scenes')">Scenes</button>
+          </div>
+          <div x-show="activeTab === 'housing'" x-data="housingTypeSelector()">
+            <div class="template-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:8px 0;">
+              <template x-for="type in housingTypes" :key="type.id">
+                <div class="template-card" :class="{ selected: selectedType?.id === type.id }" @click="selectType(type)"
+                  style="padding:12px;border-radius:8px;border:2px solid var(--border);cursor:pointer;text-align:center;">
+                  <div style="font-size:1.5em;" x-text="type.icon"></div>
+                  <div style="font-weight:600;margin:4px 0;" x-text="type.name"></div>
+                  <div style="font-size:0.8em;color:var(--text-muted);" x-text="type.description"></div>
+                </div>
+              </template>
+            </div>
+            <button class="btn" x-show="selectedType" @click="applyTemplate()" :disabled="loading">
+              <span x-show="loading">Application...</span>
+              <span x-show="!loading">Appliquer le template</span>
+            </button>
+            <div x-show="result" style="margin-top:8px;color:var(--success);">
+              <span x-text="result?.roomsCreated?.length || 0"></span> piece(s) creee(s),
+              <span x-text="result?.roomsExisting?.length || 0"></span> existante(s).
+            </div>
+            <div x-show="error" style="margin-top:8px;color:var(--danger);" x-text="error"></div>
+          </div>
+          <div x-show="activeTab === 'routines'" x-data="suggestedRoutines()">
+            <template x-for="r in routines" :key="r.templateId">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--border);">
+                <div>
+                  <span style="font-weight:600;" x-text="r.name"></span>
+                  <span style="font-size:0.8em;color:var(--text-muted);margin-left:8px;" x-text="r.description"></span>
+                </div>
+                <input type="checkbox" :checked="selectedRoutines[r.templateId]" @change="toggleRoutine(r.templateId)">
+              </div>
+            </template>
+            <button class="btn" style="margin-top:8px;" @click="activateSelected()" :disabled="loading">Activer les routines</button>
+            <div x-show="result" style="margin-top:8px;color:var(--success);" x-text="result?.created + ' routine(s) creee(s)'"></div>
+          </div>
+          <div x-show="activeTab === 'scenes'" x-data="suggestedScenes()">
+            <template x-for="s in scenes" :key="s.templateId">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--border);">
+                <span style="font-weight:600;" x-text="s.name"></span>
+                <input type="checkbox" :checked="selectedScenes[s.templateId]" @change="toggleScene(s.templateId)">
+              </div>
+            </template>
+            <button class="btn" style="margin-top:8px;" @click="applySelected()" :disabled="loading">Generer les scenes</button>
+            <div x-show="result" style="margin-top:8px;color:var(--success);" x-text="result?.scenesCreated?.length + ' scene(s) creee(s)'"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============ LOADING ============ -->
+  <template x-if="!loaded">
+    <div style="display:flex; align-items:center; justify-content:center; min-height:100vh; color:var(--text-muted);">
+      Chargement...
+    </div>
+  </template>
+
+  <!-- Supplementary app logic (AC7, Task 4.3) -->
+  <script src="/app.js"></script>
+  <!-- Story 18.1: Advanced domotique components (scenes, activity feed, long press) -->
+  <script src="/domotique-advanced.js"></script>
+  <!-- Story 18.2: WebSocket real-time updates -->
+  <script src="/domotique-ws.js"></script>
+  <!-- Story 18.4: Onboarding templates components -->
+  <script src="/onboarding-templates.js"></script>
+  <!-- Story 18.5/18.6: Device health monitoring -->
+  <script src="/device-health.js"></script>
+  <!-- Story 18.5/18.7: Weekly planning -->
+  <script src="/weekly-planning.js"></script>
+  <!-- Story 18.7: Coaching vocal overlay -->
+  <script src="/coaching.js"></script>
+  <!-- Alpine.js embarque localement (AC7, Task 4.5 — pas de dependance CDN) -->
+  <script src="/vendor/alpine.min.js" defer></script>
+  <script>
+    function app() {
+      return {
+        // State
+        loaded: false,
+        authenticated: false,
+        hasPassword: false,
+        tab: 'domotique',
+        foyer: null,
+        members: [],
+        settings: null,
+        backingUp: false,
+
+        // Login
+        loginPassword: '',
+        loginError: '',
+
+        // Foyer editing
+        editingFoyerName: false,
+        newFoyerName: '',
+
+        // Add member
+        showAddMember: false,
+        newMember: { name: '', age: null, relation: '', isAdmin: false },
+
+        // Domotique — loaded from HA
+        haConnected: false,
+        haVersion: '',
+        rooms: [],
+        allDevices: [],
+        selectedRoom: null,
+        domotiqueLoading: false,
+        activeMode: 'MAISON',
+        activityFeed: [],
+        suggestedScenes: [],
+        roomTouchTimer: null,
+        showCreateRoom: false,
+        newRoomName: '',
+        newRoomIcon: '&#127968;',
+        unassignedDevices: [],
+
+        // Story 12.3 — Vue par pièces enrichie (état partagé avec window._domotiquePieces)
+        // Les propriétés sont accessibles via $data._domPieces dans les templates Alpine
+        _domPieces: null,   // Référence vers window._domotiquePieces (initialisée dans init())
+
+        // Wizard (Story 12.2)
+        showWizard: false,
+        wizardStep: 1,
+        wizardStepNames: ['Mot de passe', 'Membres', 'Domotique', 'Logement', 'Routines', 'Confidentialite', 'Finalisation'],
+        wizardHasDevices: false,  // Story 18.4: track if HA devices were found
+        wizardPassword: '',
+        wizardPasswordConfirm: '',
+        wizardError: '',
+        wizardLoading: false,
+        wizardMembers: [],
+        wizardDevices: [],
+        wizardDevicesGrouped: {},
+        wizardRooms: [],
+        wizardHaAvailable: false,
+        wizardHaMessage: '',
+        wizardPrivacy: {
+          telemetryEnabled: false,
+          memoryRetention: 'medium',
+          wellnessDetectionEnabled: true,
+        },
+        welcomeMessage: '',
+
+        // Init
+        async init() {
+          try {
+            // Check wizard status first
+            const wizRes = await fetch('/api/wizard/status');
+            const wizData = await wizRes.json();
+            if (wizData.success && wizData.data.needsWizard) {
+              this.showWizard = true;
+              const savedStep = localStorage.getItem('diva_wizard_step');
+              this.wizardStep = wizData.data.currentStep || (savedStep ? parseInt(savedStep, 10) : 1);
+              // If step > 1, need to check we have a session
+              if (this.wizardStep > 1) {
+                const authRes = await fetch('/api/auth');
+                const authData = await authRes.json();
+                if (!authData.authenticated) {
+                  this.wizardStep = 1;
+                } else {
+                  this.authenticated = true;
+                  // Preload data for current step
+                  await this.wizardLoadStepData();
+                }
+              }
+              this.loaded = true;
+              return;
+            }
+
+            const res = await fetch('/api/auth');
+            const data = await res.json();
+            this.authenticated = data.authenticated;
+            this.hasPassword = data.hasPassword;
+            if (this.authenticated) {
+              await this.loadData();
+            }
+          } catch (e) {
+            console.error('Init error:', e);
+          }
+          this.loaded = true;
+          // PWA: register service worker
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+          }
+
+          // Story 12.3 : Initialiser le proxy vers les données de vue par pièces
+          // window._domotiquePieces est défini dans app.js (chargé avant)
+          if (typeof window._domotiquePieces !== 'undefined') {
+            this._domPieces = window._domotiquePieces;
+          }
+
+          // Story 12.3 : Si on est sur l'onglet Domotique, démarrer le polling
+          if (this.authenticated && this.tab === 'domotique') {
+            if (typeof onDomotiqueTabActivated === 'function') onDomotiqueTabActivated();
+            // Story 18.2 : Initialize WebSocket connection
+            if (typeof initDivaWebSocket === 'function') initDivaWebSocket();
+          }
+        },
+
+        async loadData() {
+          try {
+            const [foyerRes, settingsRes] = await Promise.all([
+              fetch('/api/foyer'),
+              fetch('/api/settings'),
+            ]);
+            if (foyerRes.ok) {
+              const d = await foyerRes.json();
+              this.foyer = d.foyer;
+              this.members = d.members || [];
+            }
+            if (settingsRes.ok) {
+              this.settings = await settingsRes.json();
+            }
+            // Load domotique
+            await this.loadDomotique();
+          } catch (e) {
+            console.error('Load error:', e);
+          }
+        },
+
+        // Domotique
+        async loadDomotique() {
+          try {
+            this.domotiqueLoading = true;
+            const statusRes = await fetch('/api/domotique/status');
+            const status = await statusRes.json();
+            this.haConnected = status.connected;
+            this.haVersion = status.version || '';
+
+            if (this.haConnected) {
+              const devRes = await fetch('/api/domotique/devices');
+              const devData = await devRes.json();
+              this.allDevices = devData.devices || [];
+              const haAreas = devData.areas || [];
+
+              // Build room map — start with ALL HA areas (even empty ones)
+              const roomMap = {};
+              const icons = { 'salon': '\u{1F6CB}', 'cuisine': '\u{1F373}', 'chambre': '\u{1F6CF}', 'salle de bain': '\u{1F6BF}', 'bureau': '\u{1F4BB}', 'entree': '\u{1F6AA}', 'garage': '\u{1F698}', 'jardin': '\u{1F333}', 'chambre enfant': '\u{1F476}' };
+
+              // Add all HA areas first (even without devices)
+              for (const area of haAreas) {
+                const key = area.name.toLowerCase();
+                roomMap[area.name] = {
+                  id: area.area_id,
+                  name: area.name,
+                  icon: icons[key] || '\u{1F3E0}',
+                  devices: 0,
+                  deviceList: [],
+                  area_id: area.area_id,
+                };
+              }
+
+              // Then assign devices to rooms
+              this.allDevices.forEach(d => {
+                if (d.room && roomMap[d.room]) {
+                  roomMap[d.room].devices++;
+                  roomMap[d.room].deviceList.push(d);
+                }
+              });
+
+              // Compute lightsOn and temperature per room
+              Object.values(roomMap).forEach(r => {
+                r.lightsOn = r.deviceList.filter(d => (d.domain === 'light' || d.domain === 'switch') && d.state === 'on').length;
+                const tempSensor = r.deviceList.find(d => d.domain === 'sensor' && d.attributes?.temperature);
+                r.temperature = tempSensor ? tempSensor.state : null;
+              });
+              this.rooms = Object.values(roomMap);
+              // Compute unassigned devices
+              this.unassignedDevices = this.allDevices.filter(d => !d.room);
+            }
+            this.suggestedScenes = this.getSuggestedScenes();
+          } catch (e) {
+            console.error('Domotique load error:', e);
+          } finally {
+            this.domotiqueLoading = false;
+          }
+        },
+
+        async toggleDevice(device) {
+          const action = device.state === 'on' ? 'turn_off' : 'turn_on';
+          try {
+            await fetch('/api/domotique/control', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ entity_id: device.id, action }),
+            });
+            device.state = device.state === 'on' ? 'off' : 'on';
+            this.addActivity('Dashboard', `${device.name} → ${device.state}`);
+          } catch (e) {
+            console.error('Toggle error:', e);
+          }
+        },
+
+        // Story 18.5 / FR111: Interface progressive based on device count
+        get interfaceLevel() {
+          const count = this.allDevices.length;
+          if (count < 5) return 'simple';
+          if (count < 20) return 'standard';
+          return 'advanced';
+        },
+
+        // Story 18.1: Toggle all lights in a room with single tap
+        async toggleRoom(room) {
+          const lights = (room.deviceList || []).filter(d => d.domain === 'light' || d.domain === 'switch');
+          if (lights.length === 0) { this.selectedRoom = room; return; }
+          const anyOn = lights.some(d => d.state === 'on');
+          const action = anyOn ? 'turn_off' : 'turn_on';
+          for (const light of lights) {
+            try {
+              await fetch('/api/domotique/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity_id: light.id, action }),
+              });
+              light.state = anyOn ? 'off' : 'on';
+            } catch (e) { console.error('Room toggle error:', e); }
+          }
+          room.lightsOn = anyOn ? 0 : lights.length;
+          this.addActivity('Dashboard', `${room.name} → tout ${anyOn ? 'OFF' : 'ON'}`);
+        },
+
+        // Long press detection for mobile
+        roomTouchStart(event, room) {
+          this.roomTouchTimer = setTimeout(() => {
+            this.selectedRoom = room;
+            this.roomTouchTimer = null;
+          }, 500);
+        },
+        roomTouchEnd(event, room) {
+          if (this.roomTouchTimer) {
+            clearTimeout(this.roomTouchTimer);
+            this.roomTouchTimer = null;
+            this.toggleRoom(room);
+          }
+        },
+
+        // Story 16.1: Mode management
+        async setMode(mode) {
+          this.activeMode = mode;
+          this.addActivity('Dashboard', `Mode → ${mode}`);
+          // TODO: call /api/domotique/mode when backend ready
+        },
+
+        // Story 16.5: Suggested scenes based on time
+        getSuggestedScenes() {
+          const h = new Date().getHours();
+          if (h >= 6 && h < 10) return [
+            { name: 'Réveil', icon: '🌅', actions: [] },
+            { name: 'Café', icon: '☕', actions: [] },
+          ];
+          if (h >= 10 && h < 18) return [
+            { name: 'Travail', icon: '💻', actions: [] },
+            { name: 'Repas', icon: '🍽️', actions: [] },
+          ];
+          if (h >= 18 && h < 22) return [
+            { name: 'Soirée ciné', icon: '🎬', actions: [] },
+            { name: 'Dîner', icon: '🍽️', actions: [] },
+            { name: 'Ambiance calme', icon: '🕯️', actions: [] },
+          ];
+          return [
+            { name: 'Bonne nuit', icon: '🌙', actions: [] },
+            { name: 'Veilleuse', icon: '💡', actions: [] },
+          ];
+        },
+
+        async executeScene(scene) {
+          this.addActivity('Dashboard', `Scène → ${scene.name}`);
+          // TODO: call /api/domotique/scene when backend ready
+        },
+
+        // Room management — uses HA area registry API
+        async createRoom() {
+          if (!this.newRoomName.trim()) return;
+          try {
+            const res = await fetch('/api/domotique/rooms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.newRoomName }),
+            });
+            const data = await res.json();
+            if (data.ok) {
+              this.addActivity('Dashboard', `Pièce créée : ${this.newRoomName}`);
+              this.showCreateRoom = false;
+              this.newRoomName = '';
+              await this.loadDomotique();
+            } else {
+              alert('Erreur : ' + (data.error || 'Impossible de créer la pièce'));
+            }
+          } catch (e) {
+            console.error('Create room error:', e);
+            alert('Erreur de connexion');
+          }
+        },
+
+        async deleteRoom(room) {
+          if (!confirm(`Supprimer la pièce "${room.name}" ? Les appareils seront désassignés.`)) return;
+          try {
+            // First get the area_id from HA
+            const roomsRes = await fetch('/api/domotique/rooms');
+            const roomsData = await roomsRes.json();
+            const haRoom = (roomsData.rooms || []).find(r => r.name === room.name);
+            if (!haRoom) { alert('Pièce non trouvée dans HA'); return; }
+
+            const res = await fetch('/api/domotique/rooms', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ area_id: haRoom.area_id }),
+            });
+            const data = await res.json();
+            if (data.ok) {
+              this.addActivity('Dashboard', `Pièce supprimée : ${room.name}`);
+              this.selectedRoom = null;
+              await this.loadDomotique();
+            } else {
+              alert('Erreur : ' + (data.error || 'Impossible de supprimer'));
+            }
+          } catch (e) {
+            console.error('Delete room error:', e);
+          }
+        },
+
+        async scanDevices() {
+          this.domotiqueLoading = true;
+          try {
+            const res = await fetch('/api/domotique/discover', { method: 'POST' });
+            const data = await res.json();
+            this.addActivity('Dashboard', `Scan : ${data.totalDevices || 0} appareils trouvés`);
+            await this.loadDomotique();
+          } catch (e) {
+            console.error('Scan error:', e);
+          } finally {
+            this.domotiqueLoading = false;
+          }
+        },
+
+        async assignDeviceToRoom(device, areaId) {
+          if (!areaId) return;
+          try {
+            const res = await fetch('/api/domotique/assign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ entity_id: device.id, area_id: areaId }),
+            });
+            const data = await res.json();
+            if (data.ok) {
+              const room = this.rooms.find(r => r.area_id === areaId);
+              this.addActivity('Dashboard', `${device.name} → ${room?.name || areaId}`);
+              await this.loadDomotique();
+            } else {
+              alert('Erreur : ' + (data.error || 'Assignation impossible'));
+            }
+          } catch (e) {
+            console.error('Assign error:', e);
+          }
+        },
+
+        // =====================================================================
+        // Story 12.3 — Méthodes Vue par pièces enrichie
+        // =====================================================================
+
+        /**
+         * Charge les pièces enrichies (appelé depuis les templates Alpine).
+         * AC5 : polling actif seulement sur l'onglet Domotique.
+         */
+        async loadDomotiquePieces() {
+          if (typeof fetchDomotiquePieces === 'function') {
+            await fetchDomotiquePieces(false);
+          }
+        },
+
+        /**
+         * Gère le changement d'onglet pour activer/désactiver le polling.
+         * AC5 : polling actif seulement si onglet Domotique visible.
+         */
+        onDomotiqueTabChange(newTab) {
+          if (newTab === 'domotique') {
+            if (typeof onDomotiqueTabActivated === 'function') onDomotiqueTabActivated();
+            if (typeof startAdvancedPolling === 'function') startAdvancedPolling();
+          } else {
+            if (typeof onDomotiqueTabDeactivated === 'function') onDomotiqueTabDeactivated();
+            if (typeof stopAdvancedPolling === 'function') stopAdvancedPolling();
+          }
+        },
+
+        /**
+         * Toggle rapide depuis la carte pièce (AC2).
+         * Commande vocale : "Diva, allume le salon" / "Diva, éteins le salon"
+         */
+        async toggleRoomLightsFromCard(room) {
+          if (typeof toggleRoomLights === 'function') {
+            await toggleRoomLights(room);
+          }
+        },
+
+        /**
+         * Ouvre le panneau de détail d'une pièce (AC3).
+         */
+        async openRoomDetailFromCard(room) {
+          if (typeof openRoomDetail === 'function') {
+            await openRoomDetail(room);
+          }
+        },
+
+        /**
+         * Ferme le panneau de détail (AC3).
+         */
+        closeRoomDetailPanel() {
+          if (typeof closeRoomDetail === 'function') closeRoomDetail();
+        },
+
+        /**
+         * Toggle un appareil depuis le panneau de détail (AC3).
+         * Commande vocale : "Diva, éteins la lampe du bureau"
+         */
+        async toggleDeviceFromDetail(device) {
+          if (typeof toggleDevice === 'function') {
+            await toggleDevice(device);
+          }
+        },
+
+        /**
+         * Règle la luminosité depuis un slider (AC4 : debounce 300ms).
+         * Commande vocale : "Diva, mets le salon à 50%"
+         */
+        setBrightnessFromSlider(device, value) {
+          if (typeof setDeviceBrightness === 'function') {
+            setDeviceBrightness(device, parseInt(value, 10));
+          }
+        },
+
+        /**
+         * Règle la position d'un volet depuis un slider (AC4 : debounce 300ms).
+         * Commande vocale : "Diva, ferme les volets de la chambre"
+         */
+        setPositionFromSlider(device, value) {
+          if (typeof setDevicePosition === 'function') {
+            setDevicePosition(device, parseInt(value, 10));
+          }
+        },
+
+        /**
+         * Ajuste la température d'un thermostat (+/- 0.5°) (AC3).
+         * Commande vocale : "Diva, monte le chauffage de 2 degrés"
+         */
+        async adjustTempFromDetail(device, delta) {
+          if (typeof adjustTemperature === 'function') {
+            await adjustTemperature(device, delta);
+          }
+        },
+
+        // =====================================================================
+        // FIN Story 12.3
+        // =====================================================================
+
+        // Activity feed
+        addActivity(who, action) {
+          const now = new Date();
+          const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+          this.activityFeed.unshift({ id: Date.now(), time, who, action });
+          if (this.activityFeed.length > 50) this.activityFeed.pop();
+        },
+
+        // Auth
+        async login() {
+          this.loginError = '';
+          try {
+            const res = await fetch('/api/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ password: this.loginPassword }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+              this.authenticated = true;
+              this.loginPassword = '';
+              await this.loadData();
+            } else {
+              this.loginError = data.error || 'Erreur de connexion';
+            }
+          } catch (e) {
+            this.loginError = 'Erreur réseau';
+          }
+        },
+
+        async logout() {
+          await fetch('/api/auth/logout', { method: 'POST' });
+          this.authenticated = false;
+          this.foyer = null;
+          this.members = [];
+        },
+
+        // Foyer
+        async updateFoyerName() {
+          if (!this.newFoyerName.trim()) return;
+          try {
+            const res = await fetch('/api/foyer', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.newFoyerName.trim() }),
+            });
+            if (res.ok) {
+              const d = await res.json();
+              this.foyer = d.foyer;
+              this.editingFoyerName = false;
+            }
+          } catch (e) {
+            console.error('Update foyer error:', e);
+          }
+        },
+
+        // Members
+        async addNewMember() {
+          if (!this.newMember.name.trim()) return;
+          try {
+            const res = await fetch('/api/foyer/members', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.newMember),
+            });
+            if (res.ok) {
+              const d = await res.json();
+              this.members.push(d.member);
+              this.newMember = { name: '', age: null, relation: '', isAdmin: false };
+              this.showAddMember = false;
+            }
+          } catch (e) {
+            console.error('Add member error:', e);
+          }
+        },
+
+        async deleteMember(id, name) {
+          if (!confirm(`Supprimer ${name} du foyer ?`)) return;
+          try {
+            const res = await fetch(`/api/foyer/members/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+              this.members = this.members.filter(m => m.id !== id);
+            }
+          } catch (e) {
+            console.error('Delete member error:', e);
+          }
+        },
+
+        async promoteMember(id) {
+          try {
+            const res = await fetch(`/api/foyer/members/${id}/promote`, { method: 'POST' });
+            if (res.ok) {
+              const m = this.members.find(m => m.id === id);
+              if (m) m.isAdmin = true;
+            }
+          } catch (e) {
+            console.error('Promote error:', e);
+          }
+        },
+
+        async demoteMember(id) {
+          try {
+            const res = await fetch(`/api/foyer/members/${id}/demote`, { method: 'POST' });
+            if (res.ok) {
+              const m = this.members.find(m => m.id === id);
+              if (m) m.isAdmin = false;
+            } else {
+              const d = await res.json();
+              alert(d.error || 'Impossible de rétrograder');
+            }
+          } catch (e) {
+            console.error('Demote error:', e);
+          }
+        },
+
+        // Backup
+        async triggerBackup() {
+          this.backingUp = true;
+          try {
+            const res = await fetch('/api/settings/backup', { method: 'POST' });
+            const d = await res.json();
+            if (res.ok) {
+              alert('Sauvegarde terminée avec succès.');
+              // Reload settings
+              const sr = await fetch('/api/settings');
+              if (sr.ok) this.settings = await sr.json();
+            } else {
+              alert(d.error || 'Erreur lors de la sauvegarde');
+            }
+          } catch (e) {
+            alert('Erreur réseau');
+          }
+          this.backingUp = false;
+        },
+
+        // ================================================================
+        // Wizard First-Boot (Story 12.2 — AC2-AC9, Task 7.2, 7.3, 8.1-8.3)
+        // ================================================================
+
+        /** Password strength indicator — computed properties */
+        get wizardPasswordStrengthPct() {
+          const p = this.wizardPassword;
+          if (!p || p.length < 8) return 0;
+          let score = 0;
+          if (p.length >= 8)  score += 30;
+          if (p.length >= 12) score += 20;
+          if (/[A-Z]/.test(p)) score += 15;
+          if (/[0-9]/.test(p)) score += 15;
+          if (/[^A-Za-z0-9]/.test(p)) score += 20;
+          return Math.min(score, 100);
+        },
+        get wizardPasswordStrengthClass() {
+          const pct = this.wizardPasswordStrengthPct;
+          if (pct === 0)  return '';
+          if (pct < 50)  return 'strength-weak';
+          if (pct < 75)  return 'strength-medium';
+          return 'strength-strong';
+        },
+        get wizardPasswordStrengthLabel() {
+          const pct = this.wizardPasswordStrengthPct;
+          if (pct === 0)  return '';
+          if (pct < 50)  return 'Faible';
+          if (pct < 75)  return 'Moyen';
+          return 'Fort';
+        },
+
+        /** Translate HA device type to French label */
+        wizardDeviceTypeLabel(type) {
+          const labels = {
+            light: 'Lumieres',
+            sensor: 'Capteurs',
+            switch: 'Prises / Interrupteurs',
+            cover: 'Volets',
+          };
+          return labels[type] || type;
+        },
+
+        /** Navigate to previous step and persist in localStorage */
+        wizardPrev() {
+          if (this.wizardStep > 1) {
+            this.wizardStep--;
+            this.wizardError = '';
+            localStorage.setItem('diva_wizard_step', String(this.wizardStep));
+          }
+        },
+
+        /** Preload data for the current wizard step */
+        async wizardLoadStepData() {
+          if (this.wizardStep === 2) {
+            await this.wizardLoadMembers();
+          } else if (this.wizardStep === 3) {
+            await this.wizardScanDevices();
+          }
+        },
+
+        /** Load members from API for step 2 */
+        async wizardLoadMembers() {
+          try {
+            const res = await fetch('/api/wizard/step2');
+            const data = await res.json();
+            if (data.success && data.data) {
+              this.wizardMembers = data.data.members || [];
+            }
+          } catch (e) {
+            console.error('Wizard load members error:', e);
+          }
+        },
+
+        /** Add a blank new member row in step 2 */
+        wizardAddMember() {
+          this.wizardMembers.push({
+            id: null,
+            greetingName: '',
+            role: 'membre',
+            _deleted: false,
+          });
+        },
+
+        /** Step 1 — Create admin password */
+        async wizardSubmitStep1() {
+          this.wizardError = '';
+          if (this.wizardPassword.length < 8) {
+            this.wizardError = 'Le mot de passe doit faire au minimum 8 caracteres.';
+            return;
+          }
+          if (this.wizardPassword !== this.wizardPasswordConfirm) {
+            this.wizardError = 'Les mots de passe ne correspondent pas.';
+            return;
+          }
+          this.wizardLoading = true;
+          try {
+            const res = await fetch('/api/wizard/step1', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                password: this.wizardPassword,
+                confirmation: this.wizardPasswordConfirm,
+              }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+              this.wizardError = data.error || 'Erreur lors de la creation du mot de passe.';
+              return;
+            }
+            this.authenticated = true;
+            this.wizardStep = 2;
+            localStorage.setItem('diva_wizard_step', '2');
+            await this.wizardLoadMembers();
+          } catch (e) {
+            this.wizardError = 'Erreur reseau.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+
+        /** Step 2 — Save members */
+        async wizardSubmitStep2() {
+          this.wizardError = '';
+          // Validate: non-deleted members must have a name
+          const valid = this.wizardMembers.filter(m => !m._deleted).every(m => m.greetingName && m.greetingName.trim());
+          if (!valid) {
+            this.wizardError = 'Chaque membre doit avoir un prenom.';
+            return;
+          }
+          this.wizardLoading = true;
+          try {
+            const res = await fetch('/api/wizard/step2', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ members: this.wizardMembers }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+              this.wizardError = data.error || 'Erreur lors de la sauvegarde des membres.';
+              return;
+            }
+            this.wizardMembers = data.data.members || this.wizardMembers;
+            this.wizardStep = 3;
+            localStorage.setItem('diva_wizard_step', '3');
+            await this.wizardScanDevices();
+          } catch (e) {
+            this.wizardError = 'Erreur reseau.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+
+        /** Step 3 — Scan HA devices */
+        async wizardScanDevices() {
+          this.wizardLoading = true;
+          this.wizardError = '';
+          try {
+            const res = await fetch('/api/wizard/step3');
+            const data = await res.json();
+            if (data.success && data.data) {
+              this.wizardHaAvailable = data.data.haAvailable;
+              this.wizardHaMessage = data.data.message || '';
+              this.wizardDevices = data.data.devices || [];
+              this.wizardDevicesGrouped = data.data.grouped || {};
+              this.wizardRooms = data.data.rooms || [];
+            }
+          } catch (e) {
+            this.wizardHaAvailable = false;
+            this.wizardHaMessage = 'Impossible de contacter le service domotique.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+
+        /** Step 3 — Skip home automation step */
+        wizardSkipStep3() {
+          this.wizardError = '';
+          this.wizardHasDevices = false;
+          this.wizardStep = 4;
+          localStorage.setItem('diva_wizard_step', '4');
+        },
+
+        /** Step 3 — Save device configuration */
+        async wizardSubmitStep3() {
+          this.wizardError = '';
+          this.wizardLoading = true;
+          try {
+            const devices = this.wizardDevices.map(d => ({
+              entityId: d.entityId,
+              customName: d.customName || null,
+              roomId: d.roomId || null,
+            }));
+            const res = await fetch('/api/wizard/step3', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ devices }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+              this.wizardError = data.error || 'Erreur lors de la configuration des appareils.';
+              return;
+            }
+            // Story 18.4: if devices were detected, add template steps
+            this.wizardHasDevices = this.wizardDevices.length > 0;
+            this.wizardStep = 4;
+            localStorage.setItem('diva_wizard_step', '4');
+          } catch (e) {
+            this.wizardError = 'Erreur reseau.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+
+        /** Step 4/6 — Save privacy settings */
+        async wizardSubmitStep4() {
+          this.wizardError = '';
+          this.wizardLoading = true;
+          try {
+            const res = await fetch('/api/wizard/step4', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                telemetryEnabled: String(this.wizardPrivacy.telemetryEnabled),
+                memoryRetention: this.wizardPrivacy.memoryRetention,
+                wellnessDetectionEnabled: String(this.wizardPrivacy.wellnessDetectionEnabled),
+              }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+              this.wizardError = data.error || 'Erreur lors de la sauvegarde des parametres.';
+              return;
+            }
+            const nextStep = this.wizardHasDevices ? 7 : 5;
+            this.wizardStep = nextStep;
+            localStorage.setItem('diva_wizard_step', String(nextStep));
+          } catch (e) {
+            this.wizardError = 'Erreur reseau.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+
+        /** Step 5/7 — Finalize wizard */
+        async wizardFinalize() {
+          this.wizardError = '';
+          this.wizardLoading = true;
+          try {
+            const res = await fetch('/api/wizard/step5', { method: 'POST' });
+            const data = await res.json();
+            if (!data.success) {
+              this.wizardError = data.error || 'Erreur lors de la finalisation.';
+              return;
+            }
+            // Clear persisted step — wizard done
+            localStorage.removeItem('diva_wizard_step');
+            this.showWizard = false;
+            this.authenticated = true;
+            // Load dashboard data and show welcome message
+            await this.loadData();
+            this.welcomeMessage = data.data?.message || 'Bienvenue dans votre foyer Diva !';
+            setTimeout(() => { this.welcomeMessage = ''; }, 5000);
+          } catch (e) {
+            this.wizardError = 'Erreur reseau.';
+          } finally {
+            this.wizardLoading = false;
+          }
+        },
+      };
+    }
+
+
+    // Story 18.2 — WebSocket connection indicator (AC5, Task 7.2)
+    function wsIndicator() {
+      return {
+        status: 'disconnected',
+        dotClass: 'ws-dot-grey',
+        label: '',
+
+        init() {
+          // Listen for WebSocket status changes
+          const self = this;
+          const checkWs = () => {
+            if (window._divaWs) {
+              window._divaWs.on('status_change', (data) => {
+                self.updateStatus(data.status);
+              });
+              self.updateStatus(window._divaWs.status);
+            } else {
+              setTimeout(checkWs, 500);
+            }
+          };
+          checkWs();
+        },
+
+        updateStatus(status) {
+          this.status = status;
+          switch (status) {
+            case 'connected':
+              this.dotClass = 'ws-dot-green';
+              this.label = 'En direct';
+              break;
+            case 'reconnecting':
+              this.dotClass = 'ws-dot-orange ws-dot-blink';
+              this.label = 'Reconnexion...';
+              break;
+            case 'offline':
+              this.dotClass = 'ws-dot-red';
+              this.label = 'Hors ligne';
+              break;
+            default:
+              this.dotClass = 'ws-dot-grey';
+              this.label = '';
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>
