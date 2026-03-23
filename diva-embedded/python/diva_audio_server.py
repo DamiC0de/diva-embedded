@@ -1398,20 +1398,26 @@ def _attenuate_wav(wav_bytes: bytes, volume_percent: int) -> bytes:
 
 
 def _play_wav_safe(wav_path: str):
-    """Jouer un WAV avec mute micro (skip mute/delay si déjà muté par Node.js)."""
-    already_muted = is_muted
-    if not already_muted:
-        _mute_mic()
+    """Jouer un WAV — kill arecord first car ALSA est half-duplex."""
+    _mute_mic()
+    # Kill arecord to free ALSA device (half-duplex — can't record and play simultaneously)
+    subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+    # Reap zombies
+    try:
+        while True:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        pass
+    time.sleep(0.05)  # Brief pause for ALSA to release
     try:
         subprocess.run(
             ["aplay", "-D", ALSA_DEVICE, wav_path],
             capture_output=True, timeout=30
         )
-        if not already_muted:
-            time.sleep(tuning["post_play_delay_s"])  # Écho delay seulement si on gère le mute ici
     finally:
-        if not already_muted:
-            _unmute_mic()
+        _unmute_mic()
 
 
 def _play_wav_bytes_safe(wav_bytes: bytes):
