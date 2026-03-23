@@ -1398,16 +1398,20 @@ def _attenuate_wav(wav_bytes: bytes, volume_percent: int) -> bytes:
 
 
 def _play_wav_safe(wav_path: str):
-    """Jouer un WAV avec mute micro."""
-    _mute_mic()
+    """Jouer un WAV avec mute micro (skip mute/delay si déjà muté par Node.js)."""
+    already_muted = is_muted
+    if not already_muted:
+        _mute_mic()
     try:
         subprocess.run(
             ["aplay", "-D", ALSA_DEVICE, wav_path],
             capture_output=True, timeout=30
         )
-        time.sleep(tuning["post_play_delay_s"])  # Laisser l'écho se dissiper avant unmute
+        if not already_muted:
+            time.sleep(tuning["post_play_delay_s"])  # Écho delay seulement si on gère le mute ici
     finally:
-        _unmute_mic()
+        if not already_muted:
+            _unmute_mic()
 
 
 def _play_wav_bytes_safe(wav_bytes: bytes):
