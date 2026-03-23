@@ -50,7 +50,7 @@ WAKEWORD_MODEL_PATH = "/opt/diva-embedded/assets/diva_fr.onnx"
 # --- Tunable config (loaded from JSON, modifiable via API) ---
 _TUNING_PATH = "/opt/diva-embedded/data/tuning.json"
 _DEFAULT_TUNING = {
-    "wakeword_threshold": 0.7,
+    "wakeword_threshold": 0.85,
     "wakeword_drain_frames": 20,
     "vad_silence_timeout_s": 0.8,
     "vad_min_speech_ms": 300,
@@ -74,7 +74,7 @@ _DEFAULT_TUNING = {
     "wakeword_deactivation_sound_enabled": False,
     "wakeword_false_positive_cooldown_s": 2.0,
     "wakeword_chime_latency_target_ms": 100,
-    "wakeword_threshold_adult": 0.90,
+    "wakeword_threshold_adult": 0.92,
     "wakeword_threshold_child": 0.70,
     # Story 27.5: Processing feedback
     "processing_feedback_enabled": True,
@@ -682,6 +682,13 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                         "energy_db": round(prefix_result.energy_db, 1),
                     }
                     print(f"[WW] {_log_json.dumps(log_entry)}", flush=True)
+
+                    # Reject if energy too low (TV/distant source filter)
+                    MIN_ENERGY_DB = -20.0  # Voices closer than ~2m are typically > -15dB
+                    if prefix_result.energy_db < MIN_ENERGY_DB:
+                        print(f"[WW] Rejected: energy too low ({prefix_result.energy_db:.1f}dB < {MIN_ENERGY_DB}dB) — likely TV/distant source", flush=True)
+                        oww_model.reset()
+                        continue
 
                     # Si le score ajuste tombe sous le seuil apres penalite, ignorer
                     if score_adjusted < current_threshold:
