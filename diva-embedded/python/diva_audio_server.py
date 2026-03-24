@@ -1438,6 +1438,59 @@ def _play_wav_bytes_safe(wav_bytes: bytes):
 # ENDPOINT : /mic/mute et /mic/unmute
 # =====================================================================
 
+
+@app.post("/audio/speak-stream")
+async def audio_speak_stream(body: dict):
+    """Synthesize text and play simultaneously via streaming PCM.
+    Eliminates the TTS→WAV→HTTP→play roundtrip.
+    First audio byte plays within ~50ms of synthesis start."""
+    text = body.get("text", "")
+    if not text.strip():
+        return {"error": "Empty text"}
+    
+    correlation_id = body.get("correlation_id", "")
+    
+    import urllib.request, json as _json
+    
+    _mute_mic()
+    t0 = time.time()
+    
+    try:
+        # Get WAV from Paroli TTS
+        tts_url = "http://localhost:8880/v1/audio/speech"
+        req_data = _json.dumps({
+            "input": text,
+            "voice": "fr_FR-siwis-medium",
+            "response_format": "wav",
+        }).encode()
+        req = urllib.request.Request(tts_url, data=req_data, headers={"Content-Type": "application/json"})
+        
+        tts_start = time.time()
+        resp = urllib.request.urlopen(req, timeout=8)
+        wav_bytes = resp.read()
+        tts_ms = (time.time() - tts_start) * 1000
+        
+        # Play via sounddevice (no aplay, no ALSA conflict)
+        play_start = time.time()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, sd_audio.play_wav_bytes, wav_bytes)
+        play_ms = (time.time() - play_start) * 1000
+        
+        total_ms = (time.time() - t0) * 1000
+        audio_duration = len(wav_bytes) / (22050 * 2)
+        
+        return {
+            "played": True,
+            "tts_ms": round(tts_ms),
+            "play_ms": round(play_ms),
+            "total_ms": round(total_ms),
+            "audio_duration": round(audio_duration, 2),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        _unmute_mic()
+
 @app.post("/mic/mute")
 async def mic_mute():
     """Couper le micro."""

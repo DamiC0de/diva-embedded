@@ -114,3 +114,70 @@ def stop_input_stream():
     _is_recording = False
 
 print(f"[SD_AUDIO] Initialized: device={DEVICE_INDEX} sr={SAMPLE_RATE} dtype={DTYPE}")
+
+
+# =====================================================
+# Streaming playback — play PCM chunks as they arrive
+# =====================================================
+
+class StreamingPlayer:
+    """Play PCM audio chunks in real-time as they arrive from TTS."""
+    
+    def __init__(self, sample_rate=22050, channels=1, dtype="int16"):
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.dtype = dtype
+        self._stream = None
+        self._buffer = bytearray()
+        self._lock = threading.Lock()
+        self._playing = False
+        self._finished = threading.Event()
+    
+    def start(self):
+        """Start the output stream."""
+        self._playing = True
+        self._finished.clear()
+        self._buffer = bytearray()
+        self._stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=self.channels,
+            dtype=self.dtype,
+            device=DEVICE_INDEX,
+            blocksize=2048,
+        )
+        self._stream.start()
+    
+    def feed(self, pcm_data: bytes):
+        """Feed PCM data to the output stream."""
+        if not self._stream or not self._playing:
+            return
+        audio = np.frombuffer(pcm_data, dtype=np.int16)
+        try:
+            self._stream.write(audio.reshape(-1, 1))
+        except Exception as e:
+            print(f"[SD_STREAM] Write error: {e}", flush=True)
+    
+    def stop(self):
+        """Stop and close the stream."""
+        self._playing = False
+        if self._stream:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except:
+                pass
+            self._stream = None
+        self._finished.set()
+    
+    def wait(self, timeout=30):
+        """Wait for playback to finish."""
+        self._finished.wait(timeout=timeout)
+
+# Global streaming player
+_streaming_player = None
+
+def get_streaming_player(sample_rate=22050):
+    global _streaming_player
+    if _streaming_player is None or _streaming_player.sample_rate != sample_rate:
+        _streaming_player = StreamingPlayer(sample_rate=sample_rate)
+    return _streaming_player

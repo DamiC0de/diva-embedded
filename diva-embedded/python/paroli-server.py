@@ -15,6 +15,7 @@ API: POST /v1/audio/speech  { input, voice, response_format, speed }
 """
 
 import subprocess
+import asyncio
 import tempfile
 import threading
 import struct
@@ -231,6 +232,55 @@ class ParoliDaemon:
                 raise RuntimeError("No audio data from daemon")
 
             return self._pcm_to_wav(pcm_data)
+
+
+    def synthesize_streaming(self, text: str, length_scale: float = 1.0):
+        """Generator: yield PCM chunks as they come from daemon."""
+        import select, fcntl
+        with self.lock:
+            if self.process is None or self.process.poll() is not None:
+                log_json("warn", "Daemon died, restarting")
+                self._start()
+
+            flags = fcntl.fcntl(self.process.stdout, fcntl.F_GETFL)
+            fcntl.fcntl(self.process.stdout, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+            json_input = json.dumps({
+                "text": text,
+                "length_scale": length_scale,
+                "noise_scale": 0.667,
+                "noise_w": 0.8,
+            }) + "\n"
+
+            try:
+                self.process.stdin.write(json_input.encode("utf-8"))
+                self.process.stdin.flush()
+            except BrokenPipeError:
+                self._start()
+                fcntl.fcntl(self.process.stdout, fcntl.F_SETFL, 
+                           fcntl.fcntl(self.process.stdout, fcntl.F_GETFL) | os.O_NONBLOCK)
+                self.process.stdin.write(json_input.encode("utf-8"))
+                self.process.stdin.flush()
+
+            start = time.time()
+            got_data = False
+            idle_cycles = 0
+            while time.time() - start < SYNTHESIS_TIMEOUT:
+                r, _, _ = select.select([self.process.stdout], [], [], 0.02)
+                if r:
+                    try:
+                        data = self.process.stdout.read(65536)
+                        if data:
+                            yield data
+                            got_data = True
+                            idle_cycles = 0
+                    except (BlockingIOError, OSError):
+                        pass
+                else:
+                    if got_data:
+                        idle_cycles += 1
+                        if idle_cycles > 2:
+                            break
 
     def _pcm_to_wav(self, pcm_data: bytes) -> bytes:
         """Convert raw int16 PCM to WAV."""
@@ -488,6 +538,9 @@ def pre_warm_cache():
             except: pass
         log_json("info", "TTS cache pre-warmed", count=len(_tts_cache))
     threading.Thread(target=_warm, daemon=True).start()
+
+
+
 
 if __name__ == "__main__":
     server = HTTPServer(("0.0.0.0", PORT), TTSHandler)
