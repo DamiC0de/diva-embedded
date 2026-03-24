@@ -536,15 +536,11 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
     except ChildProcessError:
         pass
     time.sleep(tuning["post_wakeword_delay_s"])  # Laisser le buffer se vider après playback
-    proc = subprocess.Popen(
-        [
-            "arecord", "-D", ALSA_DEVICE,
-            "-f", "S16_LE", "-r", str(SAMPLE_RATE),
-            "-c", str(CHANNELS), "-t", "raw",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
+    # Use sounddevice continuous input stream instead of arecord
+    stream = sd_audio.get_input_stream()
+    stream.unmute()
+    stream.drain()  # Clear old audio
+    proc = None  # No subprocess needed
 
     CHUNK_SAMPLES = 1280  # 80ms à 16kHz
     CHUNK_BYTES = CHUNK_SAMPLES * 2
@@ -559,7 +555,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
 
     # Drain: lire et jeter N frames pour vider l'écho résiduel
     for _ in range(tuning["wakeword_drain_frames"]):
-        proc.stdout.read(CHUNK_BYTES)
+        stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
     oww_model.reset()  # Reset après drain
 
     start_time = time.time()
@@ -570,7 +566,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
             if timeout_s > 0 and (time.time() - start_time) > timeout_s:
                 return None
 
-            raw = proc.stdout.read(CHUNK_BYTES)
+            raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
             if len(raw) < CHUNK_BYTES:
                 continue
 
@@ -610,7 +606,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                     flex_timeout = 2.0
                     speech_found_flex = False
                     while (time.time() - flex_start) < flex_timeout:
-                        flex_raw = proc.stdout.read(CHUNK_BYTES)
+                        flex_raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
                         if len(flex_raw) < CHUNK_BYTES:
                             continue
                         circ_buf.write(flex_raw)
@@ -912,8 +908,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                             }
 
     finally:
-        proc.terminate()
-        proc.wait()
+        stream.mute()  # Stop feeding audio to wake word (was proc.terminate)
 
 
 def _capture_post_audio(proc, capture_s: float, chunk_bytes: int) -> bytes | None:
@@ -938,7 +933,7 @@ def _capture_post_audio(proc, capture_s: float, chunk_bytes: int) -> bytes | Non
 
     try:
         while (time.time() - start) < capture_s:
-            raw = proc.stdout.read(chunk_bytes)
+            raw = stream.read_chunk(timeout=2.0) or b'\x00' * chunk_bytes
             if len(raw) < chunk_bytes:
                 continue
             post_audio.extend(raw)
@@ -993,7 +988,7 @@ def _medium_tier_listen(proc, listen_s: float, chunk_bytes: int) -> tuple:
 
     try:
         while (time.time() - start) < listen_s:
-            raw = proc.stdout.read(chunk_bytes)
+            raw = stream.read_chunk(timeout=2.0) or b'\x00' * chunk_bytes
             if len(raw) < chunk_bytes:
                 continue
             audio_buf.extend(raw)
@@ -1181,28 +1176,13 @@ def _record_with_vad(
     min_speech_ms: float,
 ) -> dict | None:
     """Enregistre avec VAD Silero + analyse prosodique (Story 27.6)."""
-    subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
-    # Reap zombie arecord processes left by pkill
-    import os
-    try:
-        while True:
-            pid, _ = os.waitpid(-1, os.WNOHANG)
-            if pid == 0:
-                break
-    except ChildProcessError:
-        pass
-    time.sleep(0.2)
+    # Use sounddevice continuous input stream (no arecord to kill)
+    stream = sd_audio.get_input_stream()
+    stream.unmute()
+    stream.drain()
     import torch
 
-    proc = subprocess.Popen(
-        [
-            "arecord", "-D", ALSA_DEVICE,
-            "-f", "S16_LE", "-r", str(SAMPLE_RATE),
-            "-c", str(CHANNELS), "-t", "raw",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
+    proc = None  # Using sd_audio input stream instead of arecord
 
     CHUNK_MS = 32
     CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_MS / 1000)
@@ -1228,7 +1208,7 @@ def _record_with_vad(
 
     # Drain first 3 frames (~96ms) to clear playback echo from mic buffer
     for _ in range(3):
-        proc.stdout.read(CHUNK_BYTES)
+        stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
 
     try:
         while True:
@@ -1237,7 +1217,7 @@ def _record_with_vad(
             if elapsed > max_duration_s:
                 break
 
-            raw = proc.stdout.read(CHUNK_BYTES)
+            raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
             if len(raw) < CHUNK_BYTES:
                 continue
 
@@ -1293,8 +1273,7 @@ def _record_with_vad(
                     return None
 
     finally:
-        proc.terminate()
-        proc.wait()
+        stream.mute()  # Stop feeding audio to wake word (was proc.terminate)
 
     if not all_audio:
         return None
@@ -1412,10 +1391,6 @@ def _play_wav_safe(wav_path: str):
         sd_audio.play_wav_file(wav_path)
     except Exception as e:
         print(f"[PLAY] sounddevice error: {e}", flush=True)
-        # Fallback to aplay
-        subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
-        time.sleep(0.1)
-        subprocess.run(["aplay", "-D", ALSA_DEVICE, wav_path], capture_output=True, timeout=15)
     _unmute_mic()
 
 
@@ -1508,12 +1483,13 @@ async def mic_unmute():
 def _mute_mic():
     global is_muted
     is_muted = True
+    sd_audio.get_input_stream().mute()
 
 
 def _unmute_mic():
     global is_muted
     is_muted = False
-    time.sleep(0.1)  # Wait for audio buffer to clear
+    sd_audio.get_input_stream().unmute()
 
 
 
