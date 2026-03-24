@@ -5,13 +5,13 @@ Requires=diva-node.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/diva-embedded
+WorkingDirectory=/opt/diva-current
 ExecStartPre=/bin/sleep 2
-ExecStart=/usr/bin/python3 python/wakeword_server.py
+ExecStart=/usr/bin/python3 /opt/diva-current/python/wakeword_server.py
 Restart=always
 RestartSec=5
 Environment=AUDIO_INPUT_DEVICE=plughw:5
-EnvironmentFile=/opt/diva-embedded/.env
+EnvironmentFile=/opt/diva-current/.env
 
 [Install]
 WantedBy=multi-user.target

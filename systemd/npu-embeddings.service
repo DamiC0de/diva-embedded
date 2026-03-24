@@ -1,0 +1,20 @@
+[Unit]
+Description=WeSpeaker NPU Voice Embeddings
+After=network.target
+# Story 11.3 — NPU Core 2 for WeSpeaker (shared with SenseVoice, time-shared)
+
+[Service]
+Type=simple
+ExecStart=/opt/wespeaker/serve.py
+WorkingDirectory=/opt/wespeaker
+# Story 11.3 / AC3 — Explicit NPU Core 2 allocation (time-shared with SenseVoice)
+Environment=NPU_CORE_MASK=0x4
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+MemoryMax=256M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

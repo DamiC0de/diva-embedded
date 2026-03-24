@@ -1,0 +1,25 @@
+[Unit]
+Description=RKLLAMA — Qwen 0.5B NPU LLM Bridge
+After=network.target
+# Story 11.3 — NPU Core 1 for Qwen bridge
+
+[Service]
+Type=simple
+ExecStart=/opt/rkllama/rkllama serve
+WorkingDirectory=/opt/rkllama
+# Story 11.3 / AC2 — Explicit NPU Core 1 allocation
+Environment=NPU_CORE_MASK=0x2
+Environment=RKLLAMA_NPU_CORE=1
+Environment=RKLLAMA_PORT=8080
+Restart=always
+RestartSec=5
+
+# Wait for the API to be ready
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 60); do curl -sf http://localhost:8080/v1/models > /dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

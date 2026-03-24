@@ -96,8 +96,28 @@ PORT = 9001
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 BYTES_PER_CHUNK = CHUNK_SAMPLES * 2  # 16-bit
-THRESHOLD = 0.35
-SILENCE_TIMEOUT_S = 1.2
+THRESHOLD_DEFAULT = 0.35
+THRESHOLD_CHILD = 0.25  # Story 2.6 / FR82: Softer threshold for child voices
+THRESHOLD = THRESHOLD_DEFAULT
+
+THRESHOLD_FILE = "/tmp/diva-wake-threshold"
+
+def check_threshold_file():
+    """Story 2.6: Check if Node.js has signaled a threshold change via shared file."""
+    global THRESHOLD
+    try:
+        if os.path.exists(THRESHOLD_FILE):
+            with open(THRESHOLD_FILE) as f:
+                mode = f.read().strip()
+            if mode == "child" and THRESHOLD != THRESHOLD_CHILD:
+                THRESHOLD = THRESHOLD_CHILD
+                print(f"[Wake] Threshold → child mode ({THRESHOLD})", flush=True)
+            elif mode == "adult" and THRESHOLD != THRESHOLD_DEFAULT:
+                THRESHOLD = THRESHOLD_DEFAULT
+                print(f"[Wake] Threshold → adult mode ({THRESHOLD})", flush=True)
+    except Exception:
+        pass
+SILENCE_TIMEOUT_S = 0.8  # Brainstorm session 3: reduced from 1.2s for faster response
 MAX_RECORD_S = 30
 ENERGY_THRESHOLD = 1500  # RMS threshold for VAD
 FOLLOW_UP_TIMEOUT_S = 5.0  # Extended for slower speakers
@@ -745,6 +765,9 @@ def main():
                     traceback.print_exc()
                     continue
 
+                # Story 2.6: Check for dynamic threshold updates from Node.js
+                check_threshold_file()
+
                 # Use raw prediction scores (prediction_buffer saturates with custom models)
                 for model_name in prediction:
                     raw_score = prediction[model_name]
@@ -772,6 +795,38 @@ def main():
             start_time = time.time()
             got_any_speech = False
             no_speech_timeout = False
+            early_stt_sent = False
+            early_stt_thread = None
+            early_stt_result = [None]  # mutable container for thread result
+
+            # CP#1 / FR: Anticipation — send early STT after 500ms of speech
+            EARLY_STT_THRESHOLD_S = 0.5
+            speech_start_time = None
+
+            def send_early_stt(early_pcm):
+                """Send partial audio to Groq for early intent detection."""
+                try:
+                    early_wav = pcm_to_wav_bytes(early_pcm)
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                        f.write(early_wav)
+                        tmp = f.name
+                    with open(tmp, "rb") as af:
+                        resp = requests.post(
+                            "https://api.groq.com/openai/v1/audio/transcriptions",
+                            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                            files={"file": ("audio.wav", af, "audio/wav")},
+                            data={"model": "whisper-large-v3", "language": "fr"},
+                            timeout=10
+                        )
+                    os.unlink(tmp)
+                    if resp.ok:
+                        text = resp.json().get("text", "").strip()
+                        if text and len(text) > 2:
+                            early_stt_result[0] = text
+                            print(f"[Wake] Early STT: '{text}'", flush=True)
+                except Exception as e:
+                    print(f"[Wake] Early STT error: {e}", flush=True)
 
             while True:
                 raw = mic_proc.stdout.read(BYTES_PER_CHUNK)
@@ -782,11 +837,25 @@ def main():
                 chunks.append(raw)
                 if is_speech_vad(raw):
                     last_voice_time = time.time()
+                    if not got_any_speech:
+                        speech_start_time = time.time()
                     got_any_speech = True
 
                 now = time.time()
                 elapsed = now - start_time
                 silence_duration = now - last_voice_time
+
+                # CP#1: Send early STT after 500ms of speech (in parallel)
+                if (got_any_speech and not early_stt_sent
+                    and speech_start_time
+                    and now - speech_start_time >= EARLY_STT_THRESHOLD_S):
+                    early_pcm = b"".join(chunks)
+                    early_stt_thread = threading.Thread(
+                        target=send_early_stt, args=(early_pcm,), daemon=True
+                    )
+                    early_stt_thread.start()
+                    early_stt_sent = True
+                    print(f"[Wake] Early STT sent ({len(early_pcm)} bytes, {now - speech_start_time:.1f}s of speech)", flush=True)
 
                 if got_any_speech and silence_duration > SILENCE_TIMEOUT_S:
                     print(f"[Wake] Silence detected after {elapsed:.1f}s", flush=True)
@@ -863,10 +932,19 @@ def main():
             # filler_thread = threading.Thread(target=play_filler, daemon=True)
             # filler_thread.start()
 
+            # CP#1: Wait for early STT thread to finish (max 2s)
+            if early_stt_thread and early_stt_thread.is_alive():
+                early_stt_thread.join(timeout=2)
+
+            early_text = early_stt_result[0] if early_stt_result[0] else None
+            if early_text:
+                print(f"[Wake] Early STT available: '{early_text}'", flush=True)
+
             print("[Wake] Sending audio to Node.js...", flush=True)
             send_json(conn, {
                 "type": "audio",
-                "data": b64_audio
+                "data": b64_audio,
+                "early_stt": early_text,  # CP#1: Partial transcription for early intent routing
             })
 
             # Wait for response from Node.js

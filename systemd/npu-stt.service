@@ -1,0 +1,23 @@
+[Unit]
+Description=SenseVoice NPU STT Fallback
+After=network.target
+# Story 11.3 — NPU Core 2 for SenseVoice (shared with WeSpeaker)
+
+[Service]
+Type=simple
+ExecStart=/opt/sensevoice/serve.py
+WorkingDirectory=/opt/sensevoice
+# Story 11.3 / AC3 — Explicit NPU Core 2 allocation
+Environment=NPU_CORE_MASK=0x4
+Environment=STT_PORT=8881
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 30); do curl -sf http://localhost:8881/health > /dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
+
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

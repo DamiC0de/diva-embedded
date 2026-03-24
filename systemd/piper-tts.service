@@ -1,0 +1,27 @@
+[Unit]
+Description=Diva TTS Server (Paroli NPU / Piper fallback)
+After=network.target
+# Story 11.2 — Paroli-server replaces the old Piper-only TTS service
+# Keeps the same unit name so diva-server.service dependency is unchanged
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/diva-embedded/python/paroli-server.py
+WorkingDirectory=/opt/diva-embedded
+Environment=TTS_PORT=8880
+Environment=PYTHONUNBUFFERED=1
+# Story 11.3 — NPU Core 0 allocation for TTS decoder
+Environment=NPU_CORE_MASK=0x1
+Environment=NPU_CORE_TTS=0
+Restart=always
+RestartSec=3
+
+# Wait for the /health endpoint to be ready (up to 30s)
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 30); do curl -sf http://localhost:8880/health > /dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
+
+# Resource limits — keep TTS from starving the system
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

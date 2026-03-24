@@ -1,0 +1,15 @@
+[Unit]
+Description=Diva Intent Router (Regex + Qwen NPU)
+After=network.target rkllama.service
+Wants=rkllama.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/pkill -f intent-router.py
+ExecStart=/usr/bin/python3 /opt/diva-embedded/python/intent-router.py
+WorkingDirectory=/opt/diva-embedded
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

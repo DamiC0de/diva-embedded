@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/diva-embedded
-ExecStart=/usr/bin/python3 python/memory-service.py
+WorkingDirectory=/opt/diva-current
+ExecStart=/usr/bin/python3 /opt/diva-current/python/memory-service.py
 Restart=on-failure
 RestartSec=5
-EnvironmentFile=/opt/diva-embedded/.env
+EnvironmentFile=/opt/diva-current/.env
 StandardOutput=journal
 StandardError=journal
 

@@ -5,8 +5,8 @@ After=network.target sound.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/diva-embedded
-ExecStart=/opt/npu-env/bin/python /opt/diva-embedded/python/diva_audio_server.py
+WorkingDirectory=/opt/diva-current
+ExecStart=/opt/npu-env/bin/python /opt/diva-current/python/diva_audio_server.py
 ExecStopPost=/bin/bash -c 'pkill -9 arecord 2>/dev/null || true'
 Restart=always
 RestartSec=3

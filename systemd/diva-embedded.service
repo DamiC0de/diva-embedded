@@ -6,7 +6,7 @@ Requires=diva-audio.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/diva-embedded
+WorkingDirectory=/opt/diva-current
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=3

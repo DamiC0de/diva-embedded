@@ -18,6 +18,7 @@ import io
 import json as _json
 import os
 import subprocess
+import sd_audio  # sounddevice full-duplex audio manager
 import tempfile
 import time
 import wave
@@ -1405,48 +1406,32 @@ def _attenuate_wav(wav_bytes: bytes, volume_percent: int) -> bytes:
 
 
 def _play_wav_safe(wav_path: str):
-    """Jouer un WAV — kill arecord first car ALSA est half-duplex."""
+    """Play WAV via sounddevice (full-duplex, no arecord conflict)."""
     _mute_mic()
-    # Kill arecord to free ALSA device (half-duplex — can't record and play simultaneously)
-    subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
-    # Reap ALL zombies
     try:
-        while True:
-            pid, _ = os.waitpid(-1, os.WNOHANG)
-            if pid == 0:
-                break
-    except ChildProcessError:
-        pass
-    # Wait for ALSA device to be fully released
-    for attempt in range(5):
+        sd_audio.play_wav_file(wav_path)
+    except Exception as e:
+        print(f"[PLAY] sounddevice error: {e}", flush=True)
+        # Fallback to aplay
+        subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
         time.sleep(0.1)
-        result = subprocess.run(
-            ["aplay", "-D", ALSA_DEVICE, wav_path],
-            capture_output=True, timeout=15
-        )
-        if result.returncode == 0:
-            break
-        # Device busy — kill arecord again and retry
-        if b"busy" in result.stderr.lower() or b"resource" in result.stderr.lower():
-            subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
-            try:
-                while True:
-                    pid, _ = os.waitpid(-1, os.WNOHANG)
-                    if pid == 0:
-                        break
-            except ChildProcessError:
-                pass
-        else:
-            break  # Other error, don't retry
+        subprocess.run(["aplay", "-D", ALSA_DEVICE, wav_path], capture_output=True, timeout=15)
     _unmute_mic()
 
 
 def _play_wav_bytes_safe(wav_bytes: bytes):
-    """Jouer des bytes WAV avec mute micro."""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-        tmp.write(wav_bytes)
-        tmp.flush()
-        _play_wav_safe(tmp.name)
+    """Play WAV bytes via sounddevice (full-duplex, no temp file needed)."""
+    _mute_mic()
+    try:
+        sd_audio.play_wav_bytes(wav_bytes)
+    except Exception as e:
+        print(f"[PLAY] sounddevice bytes error: {e}", flush=True)
+        # Fallback to file-based play
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+            tmp.write(wav_bytes)
+            tmp.flush()
+            subprocess.run(["aplay", "-D", ALSA_DEVICE, tmp.name], capture_output=True, timeout=15)
+    _unmute_mic()
 
 
 # =====================================================================

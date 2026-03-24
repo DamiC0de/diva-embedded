@@ -1,16 +1,22 @@
 [Unit]
 Description=Diva Voice Assistant Server
-After=network.target piper-tts.service
-Wants=piper-tts.service
+After=network.target paroli-tts.service diva-audio.service diva-memory.service rkllama.service npu-stt.service intent-router.service
+Wants=paroli-tts.service diva-audio.service diva-memory.service rkllama.service npu-stt.service npu-embeddings.service intent-router.service
 
 [Service]
 Type=simple
+ExecStartPre=-/usr/bin/pkill -9 -f node.dist
 ExecStart=/usr/bin/node dist/index.js
 WorkingDirectory=/opt/diva-embedded
 Restart=always
 RestartSec=5
 EnvironmentFile=/opt/diva-embedded/.env
 Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--dns-result-order=ipv4first
+Environment=SPEAKER_CONFIDENCE_THRESHOLD=0.4
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
