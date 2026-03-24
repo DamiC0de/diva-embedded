@@ -1,65 +1,96 @@
 #!/usr/bin/env python3
 """
-Diva Intent Router v4 — Minimal regex, Claude handles the rest
-Only unambiguous commands are matched locally.
-Everything else → Claude for intelligent contextual handling.
+Diva Intent Router v3 — Hybrid Regex + Qwen NPU
+Pass 1: Regex keywords (0.05ms) for obvious intents
+Pass 2: Qwen 0.5B NPU (~360ms) for ambiguous phrases
 HTTP server on port 8882
 """
 import json, time, logging, os, re
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.request
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger("intent-router")
 
 HOST = os.environ.get("INTENT_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INTENT_PORT", "8882"))
+QWEN_URL = os.environ.get("QWEN_URL", "http://localhost:8080")
 
 # ============================================================
-# MINIMAL REGEX — only unambiguous commands
-# Everything else goes to Claude
+# PASS 1 — Regex keywords (instant, <0.1ms)
+# ORDER MATTERS — first match wins
 # ============================================================
 
 INTENT_RULES_ORDERED = [
-    # Speaker registration
+    # Speaker registration (FIRST - before instruction captures "enregistre")
     ("speaker_register", [
         r"(enregistre|apprends?)\s+(ma\s+voix|qui\s+je\s+suis)",
         r"m[eé]morise\s+ma\s+voix",
     ]),
-    # Personal memory queries
-    ("about_me", [
-        r"\b(qu.est.ce que|que|quoi).*(sais|connais|retenu|souviens).*(sur moi|de moi|me concern)",
-        r"\b(tu\s+(me\s+)?connais|tu\s+sais\s+qui\s+je\s+suis)",
-        r"\b(parle[- ]moi\s+de\s+moi|dis[- ]moi\s+ce\s+que\s+tu\s+sais)",
-        r"\bsais.*[aà]\s+qui\s+tu\s+parle",
-        r"\b(qui\s+je\s+suis|tu\s+me\s+reconnais)",
-        r"\b(c.est\s+qui\s+qui\s+te\s+parle|tu\s+sais\s+c.est\s+qui)",
+    # Instructions/mémoire → toujours Claude
+    ("instruction", [
+        r"(enregistre|memorise|retiens|note|rappelle-toi|souviens|sauvegarde)",
+        r"(il faut que tu|je vais te donner|je te donne|n'oublie pas)",
     ]),
-    # Time / date — only exact patterns
-    ("time", [
-        r"\b(quelle?\s+heure|heure\s+(est|il))\b",
-        r"\bon\s+est\s+quel\s+jour\b",
-        r"\bquel\s+jour\s+(sommes|est-on)\b",
-        r"\bquelle\s+date\b",
-        r"\b(donne|dis)[- ]moi\s+l.heure\b",
-        r"\bil\s+est\s+quelle\s+heure\b",
+    # Weather
+    ("weather", [
+        r"\b(m[eé]t[eé]o|weather|forecast|pr[eé]vision)",
+        r"\b(quel\s+temps|il\s+fait\s+(beau|chaud|froid|moche|combien))",
+        r"\b(pleut|pluie|neige|soleil|vent|orage|nuage|brouillard)",
+        r"\b(va.t.il\s+(pleuvoir|neiger|faire))",
     ]),
-    # Timer — structured format only
+    # Home control
+    ("home_control", [
+        r"\b(allume|[eé]teins?|lumi[eè]re|lampe|light|turn\s+(on|off)|switch)",
+        r"\b(thermostat|chauffage|clim|climatisation|ventil)",
+        r"\b(porte|garage|volet|store|rideau|ouvre|verrouill)",
+        r"\b(aspirateur|robot|machine|lave)",
+    ]),
+    # Timer / alarm
     ("timer", [
-        r"\b(minuteur|timer)\s+(\d+|de\s+\d+)",
+        r"\b(timer|minuteur|minuterie|chrono|compte?\s*[aà]\s*rebours|countdown)",
+        r"\b(alarme|alarm|r[eé]veil)\b",
+        r"\b(rappel|remind|rappelle)",
         r"\b(dans\s+\d+\s*(minute|seconde|heure|min|sec|h)\b)",
-        r"\brappelle[- ]?moi\s+dans\s+\d+",
-        r"\b(annule|supprime|arr[eê]te)\s+(le\s+|les\s+)?minuteur",
     ]),
-    # Calculator — digit+operator+digit only
+    # Music / media
+    ("music", [
+        r"\b(musique|music|play|joue|mets|lance)\s+(de\s+la|du|the|some)",
+        r"\b(spotify|playlist|chanson|song|album|artiste)",
+        r"\b(pause|stop|suivant|next|pr[eé]c[eé]dent|previous|skip)",
+        r"\b(volume|baisse|monte|plus\s+fort|moins\s+fort|mute|sourdine)",
+    ]),
+    # Calculator
     ("calculator", [
-        r"\b(\d+)\s*(plus|\+|fois|x|\*|moins|-|divis[eé]e?\s*par|\/)\s*(\d+)",
-        r"\bcombien\s+(font?|fait)\s+\d+",
+        r"\b(combien\s+(font?|fait|vaut))",
+        r"\b(\d+\s*[\+\-\*\/x]\s*\d+)",
+        r"\b(\d+\s*(plus|moins|fois|divis[eé])\s+\d*)",
+        r"\b(convert|conver[st]i|combien\s+(de|en)\s+(kilo|gramm|m[eè]tre|litre))",
     ]),
-    # DND — explicit command only
-    ("dnd", [
-        r"\bmode\s+(nuit|silencieux|silence|ne\s+pas\s+d[eé]ranger)\b",
-        r"\b(d[eé]sactive|arr[eê]te)\s+(le\s+)?mode\s+(nuit|silencieux)\b",
-        r"\b(r[eé]active|remet).*mode\s+normal\b",
+    # Identity
+    ("identity", [
+        r"\b(qui\s+(es[- ]tu|[eê]tes.vous)|who\s+are\s+you)",
+        r"\b(comment\s+tu\s+t.appelle|ton\s+nom|your\s+name)",
+        r"\b(pr[eé]sente[- ]toi|tu\s+fais\s+quoi|que\s+sais[- ]tu\s+faire)",
+    ]),
+    # Time / date
+    ("time", [
+        r"\b(quelle?\s+heure|heure\s+(est|il)|what\s+time)",
+        r"\bon\s+est\s+quel\s+jour\b|\bquel\s+jour\s+(sommes|est-on)\b|\bquelle\s+date\s+(sommes|est-on)\b",
+        r"\bla\s+date\s+d.aujourd.hui\b|\bl.heure\s+(s.il|qu.il)\b",
+        r"\b(donne|dis).*l.heure\b",
+        r"\b(il\s+est\s+quelle|as.l.heure)",
+    ]),
+    # Greeting (standalone ONLY)
+    ("greeting", [
+        r"^(salut|bonjour|coucou|hello|hi|hey|yo|bonsoir)[\s,!.]*$",
+        r"^(wesh|ciao|ola)[\s,!.]*$",
+    ]),
+    # Goodbye
+    ("goodbye", [        r"\b(au\s+revoir|bye|bonne?\s+nuit|adieu|ciao|tchao)\b",        r"\b([aà]\s+plus|[aà]\s+bient[oô]t|[aà]\s+demain|bonne\s+soir[eé]e)\b",        r"\b(c.est\s+(bon|fini|tout|termin[eé])|j.(en\s+)?ai\s+fini|on\s+arr[eê]te)\b",        r"\bmerci.{0,15}([aà]\s+plus|[aà]\s+bient[oô]t)\b",    ]),
+    # Shutdown
+    ("shutdown", [
+        r"\b(ta\s+gueule|tais[- ]toi|ferme|ferme[- ]la|ferme[- ]ta|shut\s+up|silence|arr[eê]te)\b",
     ]),
 ]
 
@@ -68,77 +99,221 @@ for intent_name, patterns in INTENT_RULES_ORDERED:
     compiled = [re.compile(p, re.IGNORECASE | re.UNICODE) for p in patterns]
     COMPILED_RULES.append((intent_name, compiled))
 
-LOCAL_CATS = {"time", "timer", "calculator", "dnd", "speaker_register", "about_me"}
+# Intent → routing type
+LOCAL_CATS = {"speaker_register", "time", "timer", "calculator", "greeting", "goodbye", "identity", "shutdown"}
+QWEN_CATS = {"conversational"}
+HA_CATS = {"home_control", "music"}
+CLAUDE_CATS = {"weather", "news", "instruction", "complex"}
 
-def classify_regex(text):
-    for intent_name, compiled_patterns in COMPILED_RULES:
-        for pat in compiled_patterns:
-            if pat.search(text):
-                return intent_name, 0.95
+
+def classify_keywords(text):
+    """Pass 1: Regex keywords. Returns (category, confidence) or (None, 0)."""
+    text_clean = text.strip()
+    # Speaker registration check FIRST
+    if re.search(r"(enregistre|apprends?)\s+(ma\s+voix|qui\s+je\s+suis)", text_clean, re.IGNORECASE):
+        return "speaker_register", 0.95
+    # Memory/instruction bypass (but not voice registration)
+    if re.search(r"(enregistre|memorise|retiens|note|rappelle-toi|souviens|sauvegarde|il faut que tu|je vais te donner|je te donne)", text_clean, re.IGNORECASE):
+        if not re.search(r"ma\s+voix", text_clean, re.IGNORECASE):
+            return "instruction", 0.95
+    for category, patterns in COMPILED_RULES:
+        for pattern in patterns:
+            if pattern.search(text_clean):
+                return category, 0.95
     return None, 0.0
+
+
+# ============================================================
+# PASS 2 — Qwen NPU classification (~360ms)
+# Only called when regex has no match
+# ============================================================
+
+QWEN_CLASSIFY_PROMPT = """Tu es un classifieur d'intent. Classe cette phrase en UNE seule catégorie.
+
+Catégories possibles:
+- goodbye: fin de conversation, au revoir, salut, ciao, à plus, j'ai fini, c'est bon, merci c'est tout
+- conversational: salutations avec question (comment vas-tu, ça va, quoi de neuf)
+- time: demande d'heure actuelle ou de date actuelle (quelle heure, quel jour)
+- weather: demande de météo
+- home_control: contrôle maison (lumière, chauffage, porte)
+- timer: minuteur, alarme, rappel
+- calculator: calcul, conversion
+- identity: qui es-tu, comment tu t'appelles
+- news: actualités, infos du jour
+- complex: tout le reste (questions, raisonnement, recherche)
+
+Exemples:
+- "j'en ai fini merci" → goodbye
+- "salut à plus" → goodbye
+- "c'est bon merci" → goodbye
+- "comment vas-tu ce matin" → conversational
+- "raconte-moi une blague" → complex
+- "tu connais Besançon" → complex
+- "quel âge a X" → complex
+- "donne-moi l'âge de X" → complex
+- "bonjour, donne-moi la date" → time
+
+Réponds UNIQUEMENT avec le nom de la catégorie, rien d'autre.
+
+Phrase: """
+
+
+def classify_qwen(text):
+    """Pass 2: Qwen NPU classification. Returns (category, confidence)."""
+    try:
+        data = json.dumps({
+            "model": "qwen2.5-0.5b",
+            "messages": [{"role": "user", "content": QWEN_CLASSIFY_PROMPT + text}],
+            "max_tokens": 10,
+            "temperature": 0.0,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{QWEN_URL}/v1/chat/completions",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+
+        start = time.perf_counter()
+        resp = urllib.request.urlopen(req, timeout=3)
+        result = json.loads(resp.read())
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        category = result["choices"][0]["message"]["content"].strip().lower()
+        # Clean up the category
+        category = category.split()[0].strip(".,!?:;\"'")
+
+        # Validate it's a known category
+        valid = {"goodbye", "conversational", "time", "weather", "home_control", "timer",
+                 "calculator", "identity", "news", "complex", "greeting", "goodbye"}
+        if category not in valid:
+            category = "complex"
+        # Safety: if Qwen says home_control/timer/calculator for a non-obvious phrase,
+        # it is probably wrong. Default to complex for safety.
+        risky_local = {"home_control", "timer", "calculator", "identity"}
+        if category in risky_local:
+            logger.info(f"  [Qwen] Overriding risky category {category} -> complex")
+            category = "complex"
+
+        logger.info(f"  [Qwen] '{text[:40]}' -> {category} ({elapsed_ms:.0f}ms)")
+        return category, 0.8
+
+    except Exception as e:
+        logger.warning(f"  [Qwen] Failed: {e}, defaulting to complex")
+        return "complex", 0.5
+
+
+# ============================================================
+# Main classification: Regex first, Qwen fallback
+# ============================================================
+
+def classify(text):
+    start = time.perf_counter()
+
+    # Pass 1: Regex (instant)
+    category, confidence = classify_keywords(text)
+
+    # Pass 2: Skip Qwen — if regex didn't match, go straight to Claude (saves ~780ms)
+    # Qwen NPU was only useful for ambiguous phrases, but Claude handles them better
+    if category is None:
+        category = "complex"
+        confidence = 0.5
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    if category in LOCAL_CATS:
+        intent = "local_simple"
+    elif category in QWEN_CATS:
+        intent = "local_simple"  # handled by Qwen in index.ts
+    elif category in HA_CATS:
+        intent = "home_control"
+    else:
+        intent = "complex"
+
+    return {
+        "intent": intent,
+        "category": category,
+        "confidence": confidence,
+        "latency_ms": round(elapsed_ms, 3)
+    }
+
 
 # ============================================================
 # HTTP Server
 # ============================================================
 
-class IntentHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass
-
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
     def _respond(self, code, data):
         self.send_response(code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header('Content-Type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def do_POST(self):
+        if self.path == "/v1/classify":
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+            text = body.get("text", "")
+            if not text:
+                self._respond(400, {"error": "No text"})
+                return
+            result = classify(text)
+            logger.info(f"'{text[:60]}' -> {result['intent']} ({result['category']}) [{result['latency_ms']}ms]")
+            self._respond(200, result)
+        else:
+            self._respond(404, {"error": "Not found"})
+
     def do_GET(self):
         if self.path == "/health":
-            self._respond(200, {"status": "ok"})
+            self._respond(200, {"status": "ok", "version": "3.0", "mode": "hybrid-regex-qwen"})
         else:
-            self._respond(404, {"error": "not found"})
+            self._respond(404, {"error": "Not found"})
 
-    def do_POST(self):
-        if self.path != "/v1/classify":
-            self._respond(404, {"error": "not found"})
-            return
 
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length)) if length else {}
-        text = body.get("text", "").strip()
-        if not text:
-            self._respond(400, {"error": "missing text"})
-            return
+def main():
+    logger.info("Starting Intent Router v3 (Hybrid Regex + Qwen NPU)...")
 
-        t0 = time.monotonic()
+    tests = [
+        ("quelle heure il est", "time"),
+        ("quel temps fait-il demain", "weather"),
+        ("allume la lumiere du salon", "home_control"),
+        ("salut", "greeting"),
+        ("combien font 47 fois 23", "calculator"),
+        ("mets un timer de 5 minutes", "timer"),
+        ("bonne nuit", "goodbye"),
+        ("qui es-tu", "identity"),
+        ("ta gueule", "shutdown"),
+        ("baisse le volume", "music"),
+        ("enregistre mon adresse", "instruction"),
+    ]
+    passed = 0
+    for text, expected in tests:
+        result = classify(text)
+        ok = result["category"] == expected
+        if ok: passed += 1
+        status = "OK" if ok else f"FAIL (got {result['category']})"
+        logger.info(f"  {status}: '{text}' -> {result['category']} [{result['latency_ms']}ms]")
 
-        category, confidence = classify_regex(text)
-        method = "regex"
+    # Test Qwen fallback with ambiguous phrases
+    logger.info("--- Qwen NPU tests (ambiguous) ---")
+    qwen_tests = [
+        "comment vas-tu ce matin",
+        "raconte-moi une blague",
+        "est-ce que tu connais Besançon",
+        "Bonjour je voudrais la date et l'heure",
+    ]
+    for text in qwen_tests:
+        result = classify(text)
+        logger.info(f"  '{text}' -> {result['category']} [{result['latency_ms']}ms]")
 
-        if category is None:
-            category = "complex"
-            confidence = 0.0
-            method = "default"
-
-        intent = "local" if category in LOCAL_CATS else "complex"
-        latency_ms = round((time.monotonic() - t0) * 1000, 1)
-
-        result = {
-            "intent": intent,
-            "category": category,
-            "confidence": confidence,
-            "method": method,
-            "latency_ms": latency_ms,
-        }
-        logger.info(f"[{method}] \"{text}\" → {category} ({intent}) {latency_ms}ms")
-        self._respond(200, result)
-
+    logger.info(f"Regex self-test: {passed}/{len(tests)} passed")
+    import socketserver
+    class ReusableServer(HTTPServer):
+        allow_reuse_address = True
+        allow_reuse_port = True
+    server = ReusableServer((HOST, PORT), Handler)
+    logger.info(f"Intent Router v3 on {HOST}:{PORT} (hybrid regex+qwen)")
+    server.serve_forever()
 
 if __name__ == "__main__":
-    server = HTTPServer((HOST, PORT), IntentHandler)
-    logger.info(f"Intent Router v4 (minimal regex) on {HOST}:{PORT}")
-    logger.info(f"{len(COMPILED_RULES)} regex rules loaded, everything else → Claude")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        logger.info("Shutting down")
-        server.server_close()
+    main()
