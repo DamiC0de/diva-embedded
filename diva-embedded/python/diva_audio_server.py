@@ -18,7 +18,6 @@ import io
 import json as _json
 import os
 import subprocess
-import sd_audio  # sounddevice full-duplex audio manager
 import tempfile
 import time
 import wave
@@ -536,11 +535,15 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
     except ChildProcessError:
         pass
     time.sleep(tuning["post_wakeword_delay_s"])  # Laisser le buffer se vider après playback
-    # Use sounddevice continuous input stream instead of arecord
-    stream = sd_audio.get_input_stream()
-    stream.unmute()
-    stream.drain()  # Clear old audio
-    proc = None  # No subprocess needed
+    proc = subprocess.Popen(
+        [
+            "arecord", "-D", ALSA_DEVICE,
+            "-f", "S16_LE", "-r", str(SAMPLE_RATE),
+            "-c", str(CHANNELS), "-t", "raw",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
 
     CHUNK_SAMPLES = 1280  # 80ms à 16kHz
     CHUNK_BYTES = CHUNK_SAMPLES * 2
@@ -555,7 +558,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
 
     # Drain: lire et jeter N frames pour vider l'écho résiduel
     for _ in range(tuning["wakeword_drain_frames"]):
-        stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
+        proc.stdout.read(CHUNK_BYTES)
     oww_model.reset()  # Reset après drain
 
     start_time = time.time()
@@ -566,7 +569,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
             if timeout_s > 0 and (time.time() - start_time) > timeout_s:
                 return None
 
-            raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
+            raw = proc.stdout.read(CHUNK_BYTES)
             if len(raw) < CHUNK_BYTES:
                 continue
 
@@ -606,7 +609,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                     flex_timeout = 2.0
                     speech_found_flex = False
                     while (time.time() - flex_start) < flex_timeout:
-                        flex_raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
+                        flex_raw = proc.stdout.read(CHUNK_BYTES)
                         if len(flex_raw) < CHUNK_BYTES:
                             continue
                         circ_buf.write(flex_raw)
@@ -681,7 +684,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                     print(f"[WW] {_log_json.dumps(log_entry)}", flush=True)
 
                     # Reject if energy too low (TV/distant source filter)
-                    MIN_ENERGY_DB = -55.0  # Voices closer than ~2m are typically > -15dB
+                    MIN_ENERGY_DB = -20.0  # Voices closer than ~2m are typically > -15dB
                     if prefix_result.energy_db < MIN_ENERGY_DB:
                         print(f"[WW] Rejected: energy too low ({prefix_result.energy_db:.1f}dB < {MIN_ENERGY_DB}dB) — likely TV/distant source", flush=True)
                         oww_model.reset()
@@ -908,7 +911,8 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                             }
 
     finally:
-        stream.mute()  # Stop feeding audio to wake word (was proc.terminate)
+        proc.terminate()
+        proc.wait()
 
 
 def _capture_post_audio(proc, capture_s: float, chunk_bytes: int) -> bytes | None:
@@ -933,7 +937,7 @@ def _capture_post_audio(proc, capture_s: float, chunk_bytes: int) -> bytes | Non
 
     try:
         while (time.time() - start) < capture_s:
-            raw = stream.read_chunk(timeout=2.0) or b'\x00' * chunk_bytes
+            raw = proc.stdout.read(chunk_bytes)
             if len(raw) < chunk_bytes:
                 continue
             post_audio.extend(raw)
@@ -988,7 +992,7 @@ def _medium_tier_listen(proc, listen_s: float, chunk_bytes: int) -> tuple:
 
     try:
         while (time.time() - start) < listen_s:
-            raw = stream.read_chunk(timeout=2.0) or b'\x00' * chunk_bytes
+            raw = proc.stdout.read(chunk_bytes)
             if len(raw) < chunk_bytes:
                 continue
             audio_buf.extend(raw)
@@ -1176,13 +1180,28 @@ def _record_with_vad(
     min_speech_ms: float,
 ) -> dict | None:
     """Enregistre avec VAD Silero + analyse prosodique (Story 27.6)."""
-    # Use sounddevice continuous input stream (no arecord to kill)
-    stream = sd_audio.get_input_stream()
-    stream.unmute()
-    stream.drain()
+    subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+    # Reap zombie arecord processes left by pkill
+    import os
+    try:
+        while True:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        pass
+    time.sleep(0.2)
     import torch
 
-    proc = None  # Using sd_audio input stream instead of arecord
+    proc = subprocess.Popen(
+        [
+            "arecord", "-D", ALSA_DEVICE,
+            "-f", "S16_LE", "-r", str(SAMPLE_RATE),
+            "-c", str(CHANNELS), "-t", "raw",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
 
     CHUNK_MS = 32
     CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_MS / 1000)
@@ -1208,7 +1227,7 @@ def _record_with_vad(
 
     # Drain first 3 frames (~96ms) to clear playback echo from mic buffer
     for _ in range(3):
-        stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
+        proc.stdout.read(CHUNK_BYTES)
 
     try:
         while True:
@@ -1217,7 +1236,7 @@ def _record_with_vad(
             if elapsed > max_duration_s:
                 break
 
-            raw = stream.read_chunk(timeout=5.0) or b'\x00' * CHUNK_BYTES
+            raw = proc.stdout.read(CHUNK_BYTES)
             if len(raw) < CHUNK_BYTES:
                 continue
 
@@ -1273,7 +1292,8 @@ def _record_with_vad(
                     return None
 
     finally:
-        stream.mute()  # Stop feeding audio to wake word (was proc.terminate)
+        proc.terminate()
+        proc.wait()
 
     if not all_audio:
         return None
@@ -1388,25 +1408,22 @@ def _play_wav_safe(wav_path: str):
     """Play WAV via sounddevice (full-duplex, no arecord conflict)."""
     _mute_mic()
     try:
-        sd_audio.play_wav_file(wav_path)
+        subprocess.run(["aplay", "-D", ALSA_DEVICE, wav_path], capture_output=True, timeout=15)
     except Exception as e:
         print(f"[PLAY] sounddevice error: {e}", flush=True)
+        # Fallback to aplay
+        subprocess.run(["pkill", "-9", "arecord"], capture_output=True)
+        time.sleep(0.1)
+        subprocess.run(["aplay", "-D", ALSA_DEVICE, wav_path], capture_output=True, timeout=15)
     _unmute_mic()
 
 
 def _play_wav_bytes_safe(wav_bytes: bytes):
-    """Play WAV bytes via sounddevice (full-duplex, no temp file needed)."""
-    _mute_mic()
-    try:
-        sd_audio.play_wav_bytes(wav_bytes)
-    except Exception as e:
-        print(f"[PLAY] sounddevice bytes error: {e}", flush=True)
-        # Fallback to file-based play
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-            tmp.write(wav_bytes)
-            tmp.flush()
-            subprocess.run(["aplay", "-D", ALSA_DEVICE, tmp.name], capture_output=True, timeout=15)
-    _unmute_mic()
+    """Play WAV bytes via temp file + aplay."""
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+        tmp.write(wav_bytes)
+        tmp.flush()
+        _play_wav_safe(tmp.name)
 
 
 # =====================================================================
@@ -1448,7 +1465,7 @@ async def audio_speak_stream(body: dict):
         # Play via sounddevice (no aplay, no ALSA conflict)
         play_start = time.time()
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, sd_audio.play_wav_bytes, wav_bytes)
+        await loop.run_in_executor(None, _play_wav_bytes_safe, wav_bytes)
         play_ms = (time.time() - play_start) * 1000
         
         total_ms = (time.time() - t0) * 1000
@@ -1483,13 +1500,12 @@ async def mic_unmute():
 def _mute_mic():
     global is_muted
     is_muted = True
-    sd_audio.get_input_stream().mute()
 
 
 def _unmute_mic():
     global is_muted
     is_muted = False
-    sd_audio.get_input_stream().unmute()
+    time.sleep(0.1)  # Wait for audio buffer to clear
 
 
 
