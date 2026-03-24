@@ -50,7 +50,7 @@ INTENT_RULES_ORDERED = [
     ("timer", [
         r"\b(timer|minuteur|minuterie|chrono|compte?\s*[aà]\s*rebours|countdown)",
         r"\b(alarme|alarm|r[eé]veil)\b",
-        r"\b(rappel|remind|rappelle)",
+        r"\b(rappel|remind|rappelle).{0,20}\b(dans|minute|heure|demain|[aà]\s+\d)",
         r"\b(dans\s+\d+\s*(minute|seconde|heure|min|sec|h)\b)",
     ]),
     # Music / media
