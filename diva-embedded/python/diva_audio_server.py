@@ -685,7 +685,7 @@ def _wakeword_listen(timeout_s: float, capture_post_s: float = 2.0) -> dict | No
                     print(f"[WW] {_log_json.dumps(log_entry)}", flush=True)
 
                     # Reject if energy too low (TV/distant source filter)
-                    MIN_ENERGY_DB = -20.0  # Voices closer than ~2m are typically > -15dB
+                    MIN_ENERGY_DB = -55.0  # Voices closer than ~2m are typically > -15dB
                     if prefix_result.energy_db < MIN_ENERGY_DB:
                         print(f"[WW] Rejected: energy too low ({prefix_result.energy_db:.1f}dB < {MIN_ENERGY_DB}dB) — likely TV/distant source", flush=True)
                         oww_model.reset()
